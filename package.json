@@ -1,0 +1,40 @@
+{
+  "name": "mybible-cli",
+  "version": "1.0.0",
+  "description": "Fast, standalone CLI toolkit and library for MyBible SQLite modules (.SQLite3, .bbl.mybible, .cmt.mybible, .dct.mybible) with LXX/MT Psalms versification mapping",
+  "type": "module",
+  "bin": {
+    "mybible": "./bin/mybible.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "node --no-warnings --import tsx/esm src/cli.ts",
+    "test": "node --no-warnings --import tsx/esm --test tests/*.test.ts",
+    "setup": "npm run build && node --no-warnings bin/mybible.js setup",
+    "setup:all": "npm run build && node --no-warnings bin/mybible.js download --all"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "picocolors": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
