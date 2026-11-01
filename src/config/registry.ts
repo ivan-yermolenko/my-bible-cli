@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MyBibleDatabase } from '../db/sqlite-adapter.js';
-import type { ModuleMetadata, ModuleType } from '../types.js';
+import { MyBibleDatabase, NodeSqliteStorageDriver } from '../db/sqlite-adapter.js';
+import type { ModuleMetadata, ModuleProvider, ModuleType, SqlStorageDriver } from '../types.js';
 
 const MODULE_SUFFIXES: Array<{ suffix: string; defaultType: ModuleType }> = [
   { suffix: '.bbl.mybible', defaultType: 'bible' },
@@ -38,7 +38,7 @@ export function parseModuleFilename(
   return null;
 }
 
-export class ModuleRegistry {
+export class ModuleRegistry implements ModuleProvider {
   private readonly customDirs: string[];
 
   constructor(customDirs: string[] = []) {
@@ -259,4 +259,18 @@ export class ModuleRegistry {
     const db = new MyBibleDatabase(metadata.filePath);
     return { db, metadata };
   }
+
+  /**
+   * Resolves a module and returns an open `SqlStorageDriver` instance along with its `ModuleMetadata`.
+   * Implements `ModuleProvider.openModule`.
+   */
+  public openModule(
+    idOrPath: string,
+    expectedType?: ModuleType,
+  ): { driver: SqlStorageDriver; metadata: ModuleMetadata } {
+    const metadata = this.resolveModule(idOrPath, expectedType);
+    const driver = new NodeSqliteStorageDriver(metadata.filePath, { readOnly: true });
+    return { driver, metadata };
+  }
 }
+

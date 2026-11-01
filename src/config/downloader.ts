@@ -2,8 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import zlib from 'node:zlib';
 import { BOOK_LIST } from '../parser/book-names.js';
-import type { ModuleType, VersificationTradition } from '../types.js';
+import type {
+  ExtraRegistryItem,
+  ExtraRegistryManifest,
+  ModuleType,
+  VersificationTradition,
+} from '../types.js';
 
 export interface RemoteModuleCatalogItem {
   id: string;
@@ -21,6 +27,10 @@ export interface RemoteModuleCatalogItem {
 const BEBLIA_BASE_URL = 'https://raw.githubusercontent.com/Beblia/Holy-Bible-XML-Format/master';
 const LYRICVERSE_BASE_URL =
   'https://raw.githubusercontent.com/0xt1m/LyricVerse-2.0/main/seed-default/BibleTranslations';
+
+export const DEFAULT_EXTRA_REGISTRY_URLS = [
+  'http://mybible.infoo.pro/extra.registry.json',
+];
 
 export const REMOTE_MODULES_CATALOG: RemoteModuleCatalogItem[] = [
   // Direct Native .SQLite3 downloads
@@ -590,10 +600,28 @@ export async function downloadAndInstallModule(
 
   if (item.sourceType === 'sqlite') {
     const arrayBuffer = await response.arrayBuffer();
-    const tmpPath = `${filePath}.tmp`;
-    fs.writeFileSync(tmpPath, Buffer.from(arrayBuffer));
-    fs.renameSync(tmpPath, filePath);
-    options.onProgress?.(`[OK]   Saved SQLite module ${item.id} -> ${filePath}`);
+    const buffer = Buffer.from(arrayBuffer);
+    const isZip =
+      item.url.toLowerCase().endsWith('.zip') ||
+      (buffer.length >= 4 &&
+        buffer[0] === 0x50 &&
+        buffer[1] === 0x4b &&
+        buffer[2] === 0x03 &&
+        buffer[3] === 0x04);
+
+    if (isZip) {
+      options.onProgress?.('[UNZIP] Extracting database file from ZIP archive...');
+      const extracted = extractFirstFileFromZipBuffer(buffer);
+      const tmpPath = `${filePath}.tmp`;
+      fs.writeFileSync(tmpPath, extracted.data);
+      fs.renameSync(tmpPath, filePath);
+      options.onProgress?.(`[OK]   Extracted and saved SQLite module ${item.id} -> ${filePath}`);
+    } else {
+      const tmpPath = `${filePath}.tmp`;
+      fs.writeFileSync(tmpPath, buffer);
+      fs.renameSync(tmpPath, filePath);
+      options.onProgress?.(`[OK]   Saved SQLite module ${item.id} -> ${filePath}`);
+    }
   } else if (item.sourceType === 'beblia-xml') {
     const xmlText = await response.text();
     const tmpPath = `${filePath}.tmp`;
@@ -605,6 +633,259 @@ export async function downloadAndInstallModule(
   }
 
   return { id: item.id, filePath, skipped: false };
+}
+
+/**
+ * Extracts the first non-directory file from a ZIP archive Buffer in pure Node.js
+ * using built-in `node:zlib` without external dependencies.
+ * Handles both compression method 0 (Stored) and 8 (Deflate).
+ */
+export function extractFirstFileFromZipBuffer(
+  zipBuffer: Buffer,
+): { fileName: string; data: Buffer } {
+  if (zipBuffer.length < 30) {
+    throw new Error('Invalid ZIP buffer: size is less than 30 bytes.');
+  }
+
+  // 1. Search for End of Central Directory Record (EOCD signature: 0x06054b50)
+  let eocdOffset = -1;
+  const minSearch = Math.max(0, zipBuffer.length - 65557);
+  for (let i = zipBuffer.length - 22; i >= minSearch; i--) {
+    if (
+      zipBuffer[i] === 0x50 &&
+      zipBuffer[i + 1] === 0x4b &&
+      zipBuffer[i + 2] === 0x05 &&
+      zipBuffer[i + 3] === 0x06
+    ) {
+      eocdOffset = i;
+      break;
+    }
+  }
+
+  if (eocdOffset !== -1) {
+    const totalEntries = zipBuffer.readUInt16LE(eocdOffset + 10);
+    const cdOffset = zipBuffer.readUInt32LE(eocdOffset + 16);
+
+    let curCd = cdOffset;
+    for (let e = 0; e < totalEntries && curCd + 46 <= zipBuffer.length; e++) {
+      if (zipBuffer.readUInt32LE(curCd) !== 0x02014b50) {
+        break;
+      }
+      const method = zipBuffer.readUInt16LE(curCd + 10);
+      const compSize = zipBuffer.readUInt32LE(curCd + 20);
+      const fnLen = zipBuffer.readUInt16LE(curCd + 28);
+      const extraLen = zipBuffer.readUInt16LE(curCd + 30);
+      const commentLen = zipBuffer.readUInt16LE(curCd + 32);
+      const localHdrOffset = zipBuffer.readUInt32LE(curCd + 42);
+
+      const rawFileName = zipBuffer.toString('utf8', curCd + 46, curCd + 46 + fnLen);
+      curCd += 46 + fnLen + extraLen + commentLen;
+
+      // Skip directory entries
+      if (rawFileName.endsWith('/') || rawFileName.endsWith('\\')) {
+        continue;
+      }
+
+      if (
+        localHdrOffset + 30 <= zipBuffer.length &&
+        zipBuffer.readUInt32LE(localHdrOffset) === 0x04034b50
+      ) {
+        const localFnLen = zipBuffer.readUInt16LE(localHdrOffset + 26);
+        const localExtraLen = zipBuffer.readUInt16LE(localHdrOffset + 28);
+        const dataStart = localHdrOffset + 30 + localFnLen + localExtraLen;
+        const dataEnd = dataStart + compSize;
+
+        if (dataEnd <= zipBuffer.length) {
+          const compData = zipBuffer.subarray(dataStart, dataEnd);
+          let data: Buffer;
+          if (method === 0) {
+            data = Buffer.from(compData);
+          } else if (method === 8) {
+            data = zlib.inflateRawSync(compData);
+          } else {
+            throw new Error(`Unsupported ZIP compression method: ${method}`);
+          }
+
+          const fileName = path.basename(rawFileName);
+          return { fileName, data };
+        }
+      }
+    }
+  }
+
+  // 2. Fallback: parse direct Local File Header at offset 0
+  if (
+    zipBuffer[0] === 0x50 &&
+    zipBuffer[1] === 0x4b &&
+    zipBuffer[2] === 0x03 &&
+    zipBuffer[3] === 0x04
+  ) {
+    const method = zipBuffer.readUInt16LE(8);
+    const compSize = zipBuffer.readUInt32LE(18);
+    const fnLen = zipBuffer.readUInt16LE(26);
+    const extraLen = zipBuffer.readUInt16LE(28);
+    const rawFileName = zipBuffer.toString('utf8', 30, 30 + fnLen);
+    const dataStart = 30 + fnLen + extraLen;
+    const dataEnd = compSize > 0 ? dataStart + compSize : zipBuffer.length;
+    const compData = zipBuffer.subarray(dataStart, dataEnd);
+
+    let data: Buffer;
+    if (method === 0) {
+      data = Buffer.from(compData);
+    } else if (method === 8) {
+      data = zlib.inflateRawSync(compData);
+    } else {
+      throw new Error(`Unsupported ZIP compression method: ${method}`);
+    }
+
+    const fileName = path.basename(rawFileName) || 'module.SQLite3';
+    return { fileName, data };
+  }
+
+  throw new Error('Buffer is not a valid ZIP archive (magic signature not found).');
+}
+
+/**
+ * Fetches an Extra Registry manifest from a remote URL with an 8-second timeout.
+ * Supports both object manifest `{ modules: [...] }` and top-level array `[...]` formats.
+ */
+export async function fetchExtraRegistry(
+  registryUrl = DEFAULT_EXTRA_REGISTRY_URLS[0],
+): Promise<ExtraRegistryManifest> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch(registryUrl, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        'User-Agent': 'MyBible-CLI/1.0',
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `Failed to fetch extra registry from ${registryUrl}: HTTP ${res.status} ${res.statusText}`,
+      );
+    }
+
+    const json = (await res.json()) as unknown;
+    if (Array.isArray(json)) {
+      return {
+        registry_url: registryUrl,
+        modules: json as ExtraRegistryItem[],
+      };
+    }
+
+    if (json && typeof json === 'object') {
+      const obj = json as Record<string, unknown>;
+      const rawModules = Array.isArray(obj.modules) ? obj.modules : [];
+      return {
+        registry_url: typeof obj.registry_url === 'string' ? obj.registry_url : registryUrl,
+        name: typeof obj.name === 'string' ? obj.name : undefined,
+        description: typeof obj.description === 'string' ? obj.description : undefined,
+        modules: rawModules as ExtraRegistryItem[],
+      };
+    }
+
+    throw new Error(`Invalid JSON format received from extra registry at ${registryUrl}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Downloads a module from an extra registry (e.g. http://mybible.infoo.pro/extra.registry.json).
+ * Automatically unzips if the archive is compressed.
+ */
+export async function downloadFromExtraRegistry(
+  moduleIdOrAbbr: string,
+  registryUrl = DEFAULT_EXTRA_REGISTRY_URLS[0],
+  targetDir?: string,
+  options: DownloadOptions = {},
+): Promise<{ id: string; filePath: string; skipped: boolean }> {
+  const norm = moduleIdOrAbbr.trim().toLowerCase();
+  options.onProgress?.(`[GET]  Fetching extra registry manifest from ${registryUrl}...`);
+  const manifest = await fetchExtraRegistry(registryUrl);
+
+  const matched = manifest.modules.find((item) => {
+    const abbr = item.abbreviation?.toLowerCase();
+    const fname = item.file_name.toLowerCase();
+    const baseFname = fname.replace(/(\.bbl|\.cmt|\.dct)?\.mybible|\.sqlite3|\.zip/gi, '');
+    return (
+      abbr === norm ||
+      fname === norm ||
+      baseFname === norm ||
+      item.url.toLowerCase().endsWith(`/${norm}`) ||
+      item.url.toLowerCase().endsWith(`/${norm}.zip`)
+    );
+  });
+
+  if (!matched) {
+    const sampleAvailable = manifest.modules
+      .slice(0, 10)
+      .map((m) => m.abbreviation || m.file_name)
+      .join(', ');
+    throw new Error(
+      `Module "${moduleIdOrAbbr}" not found in extra registry (${manifest.modules.length} modules available, e.g.: ${sampleAvailable}).`,
+    );
+  }
+
+  const effectiveTargetDir = resolveTargetModulesDir({ targetDir, global: options.global });
+  fs.mkdirSync(effectiveTargetDir, { recursive: true });
+
+  let destFileName = path.basename(matched.file_name);
+  if (destFileName.toLowerCase().endsWith('.zip')) {
+    destFileName = destFileName.slice(0, -4);
+  }
+  if (!destFileName.includes('.')) {
+    destFileName += '.bbl.mybible';
+  }
+
+  const destFilePath = path.join(effectiveTargetDir, destFileName);
+  if (!options.overwrite && fs.existsSync(destFilePath) && fs.statSync(destFilePath).size > 0) {
+    options.onProgress?.(`[SKIP] ${matched.file_name} already exists at ${destFilePath}`);
+    return { id: matched.abbreviation || destFileName, filePath: destFilePath, skipped: true };
+  }
+
+  options.onProgress?.(`[GET]  Downloading ${matched.file_name} from ${matched.url}...`);
+  const res = await fetch(matched.url);
+  if (!res.ok) {
+    throw new Error(
+      `Failed to download module from ${matched.url}: HTTP ${res.status} ${res.statusText}`,
+    );
+  }
+
+  const arrayBuffer = await res.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const isZip =
+    matched.url.toLowerCase().endsWith('.zip') ||
+    matched.file_name.toLowerCase().endsWith('.zip') ||
+    (buffer.length >= 4 &&
+      buffer[0] === 0x50 &&
+      buffer[1] === 0x4b &&
+      buffer[2] === 0x03 &&
+      buffer[3] === 0x04);
+
+  if (isZip) {
+    options.onProgress?.('[UNZIP] Extracting database file from ZIP archive...');
+    const extracted = extractFirstFileFromZipBuffer(buffer);
+    const finalName = extracted.fileName || destFileName;
+    const finalPath = path.join(effectiveTargetDir, finalName);
+    const tmpPath = `${finalPath}.tmp`;
+    fs.writeFileSync(tmpPath, extracted.data);
+    fs.renameSync(tmpPath, finalPath);
+    options.onProgress?.(`[OK]   Extracted and saved ${finalName} -> ${finalPath}`);
+    return { id: matched.abbreviation || finalName, filePath: finalPath, skipped: false };
+  }
+
+  const tmpPath = `${destFilePath}.tmp`;
+  fs.writeFileSync(tmpPath, buffer);
+  fs.renameSync(tmpPath, destFilePath);
+  options.onProgress?.(`[OK]   Saved ${destFileName} -> ${destFilePath}`);
+  return { id: matched.abbreviation || destFileName, filePath: destFilePath, skipped: false };
 }
 
 export async function downloadModuleBundle(

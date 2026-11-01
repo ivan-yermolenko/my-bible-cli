@@ -122,3 +122,89 @@ export interface PassageQueryResult {
   verses: BibleVerse[];
   versificationInfo?: PsalmConversionResult;
 }
+
+/**
+ * Universal synchronous/isomorphic SQL storage driver interface.
+ * Can be implemented by Node.js DatabaseSync, sql.js, better-sqlite3, OPFS, or in-memory mocks.
+ */
+export interface SqlStorageDriver {
+  all<T = Record<string, unknown>>(sql: string, params?: unknown[]): T[];
+  get<T = Record<string, unknown>>(sql: string, params?: unknown[]): T | undefined;
+  close(): void;
+}
+
+/**
+ * Universal module resolution and provider interface.
+ */
+export interface ModuleProvider {
+  listModules(type?: ModuleType): ModuleMetadata[];
+  resolveModule(idOrPath: string, expectedType?: ModuleType): ModuleMetadata;
+  openModule(idOrPath: string, expectedType?: ModuleType): { driver: SqlStorageDriver; metadata: ModuleMetadata };
+}
+
+/**
+ * Book navigation summary for Web UIs.
+ */
+export interface ModuleBookSummary {
+  bookNumber: number;
+  canonicalBookNumber: number;
+  shortName: string;
+  longName: string;
+  chapterCount: number;
+  isNewTestament: boolean;
+}
+
+/**
+ * Chapter navigation summary for Web UIs.
+ */
+export interface ChapterSummary {
+  bookNumber: number;
+  chapter: number;
+  verseCount: number;
+}
+
+/**
+ * Bible full-text search options.
+ */
+export interface BibleSearchOptions {
+  trans?: string;
+  limit?: number;
+  bookNumber?: number;
+  testament?: 'ot' | 'nt' | 'all';
+  caseSensitive?: boolean;
+}
+
+/**
+ * Bible full-text search result.
+ */
+export interface BibleSearchResult {
+  query: string;
+  module: ModuleMetadata;
+  totalMatches: number;
+  verses: BibleVerse[];
+}
+
+/**
+ * Item in MyBible Extra Registry (e.g. from http://mybible.infoo.pro/extra.registry.json).
+ */
+export interface ExtraRegistryItem {
+  url: string;
+  file_name: string;
+  language: string;
+  description: string;
+  version?: string;
+  size?: number;
+  abbreviation?: string;
+  type?: string;
+}
+
+/**
+ * Manifest containing modules from a MyBible Extra Registry.
+ */
+export interface ExtraRegistryManifest {
+  registry_url?: string;
+  name?: string;
+  description?: string;
+  modules: ExtraRegistryItem[];
+}
+

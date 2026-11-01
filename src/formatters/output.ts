@@ -2,8 +2,10 @@ import pc from 'picocolors';
 import { getBookByNumber } from '../parser/book-names.js';
 import { formatParsedReference } from '../parser/reference-parser.js';
 import type {
+  BibleSearchResult,
   CommentaryEntry,
   DictionaryEntry,
+  ModuleBookSummary,
   OutputFormat,
   ParsedReference,
   PassageQueryResult,
@@ -378,3 +380,110 @@ export function formatDictionaryEntries(
   }
   return lines.join('\n');
 }
+
+/**
+ * Formats Bible full-text search results into 'pretty' | 'md' | 'raw' | 'json'.
+ */
+export function formatSearchResult(
+  result: BibleSearchResult,
+  format: OutputFormat = 'pretty',
+): string {
+  if (format === 'json') {
+    return JSON.stringify(result, null, 2);
+  }
+
+  if (format === 'raw') {
+    return result.verses
+      .map((v) => `${v.bookShortName ?? v.bookNumber} ${v.chapter}:${v.verse} ${v.cleanText}`)
+      .join('\n');
+  }
+
+  const modUpper = result.module.id.toUpperCase();
+
+  if (format === 'md') {
+    const lines = [
+      `### Результати пошуку: "${result.query}" (${modUpper}) — знайдено ${result.totalMatches}`,
+      '',
+    ];
+    if (result.verses.length === 0) {
+      lines.push('> *(Нічого не знайдено / No matches found)*');
+    } else {
+      for (const v of result.verses) {
+        const coord = `${v.bookShortName ?? v.bookNumber} ${v.chapter}:${v.verse}`;
+        lines.push(`> **${coord}** — ${v.cleanText}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  // 'pretty' format
+  const lines = [
+    `${pc.bold(pc.cyan(`Пошук: "${result.query}"`))} ${pc.dim(`[${modUpper}]`)} — знайдено ${pc.bold(pc.green(String(result.totalMatches)))} (показано ${result.verses.length}):`,
+    pc.dim('─'.repeat(64)),
+  ];
+
+  if (result.verses.length === 0) {
+    lines.push(pc.yellow('Нічого не знайдено / No matches found.'));
+  } else {
+    for (const v of result.verses) {
+      const coord = `${v.bookShortName ?? v.bookNumber} ${v.chapter}:${v.verse}`;
+      lines.push(`${pc.bold(pc.green(coord.padEnd(14)))} ${v.cleanText}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Formats a list of module books into 'pretty' | 'md' | 'json'.
+ */
+export function formatBooksList(
+  books: ModuleBookSummary[],
+  format: OutputFormat = 'pretty',
+): string {
+  if (format === 'json') {
+    return JSON.stringify(books, null, 2);
+  }
+
+  if (format === 'md') {
+    const lines = [
+      '| № | Код | Книга | Розділів | Завіт |',
+      '|---|-----|-------|----------|-------|',
+    ];
+    for (const b of books) {
+      const test = b.isNewTestament ? 'НЗ' : 'СЗ';
+      lines.push(`| ${b.bookNumber} | ${b.shortName} | ${b.longName} | ${b.chapterCount} | ${test} |`);
+    }
+    return lines.join('\n');
+  }
+
+  const lines = [
+    pc.bold(pc.cyan(`Список книг модуля (${books.length}):`)),
+    pc.dim('─'.repeat(60)),
+  ];
+
+  const ot = books.filter((b) => !b.isNewTestament);
+  const nt = books.filter((b) => b.isNewTestament);
+
+  if (ot.length > 0) {
+    lines.push(pc.bold(pc.yellow(`Старий Завіт (${ot.length}):`)));
+    for (const b of ot) {
+      lines.push(
+        `  ${pc.dim(String(b.bookNumber).padStart(3))}  ${pc.bold(b.shortName.padEnd(6))} ${b.longName.padEnd(28)} ${pc.dim(`(${b.chapterCount} розд.)`)}`,
+      );
+    }
+  }
+
+  if (nt.length > 0) {
+    if (ot.length > 0) lines.push('');
+    lines.push(pc.bold(pc.yellow(`Новий Завіт (${nt.length}):`)));
+    for (const b of nt) {
+      lines.push(
+        `  ${pc.dim(String(b.bookNumber).padStart(3))}  ${pc.bold(b.shortName.padEnd(6))} ${b.longName.padEnd(28)} ${pc.dim(`(${b.chapterCount} розд.)`)}`,
+      );
+    }
+  }
+
+  return lines.join('\n');
+}
+
