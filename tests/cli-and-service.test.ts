@@ -448,5 +448,19 @@ describe('Remote Catalog, MyBibleService & Output Formatters', () => {
       await api.close();
     }
   });
+
+  it('provides an accurate missingBookHint when querying a book absent from a module', () => {
+    const res = service.getPassage('Бут 1:1', { trans: 'ubt' });
+    assert.equal(res.verses.length, 0);
+    assert.ok(res.missingBookHint);
+    assert.match(res.missingBookHint, /Книга «Буття» відсутня у модулі UBT/);
+
+    const prettyOut = formatPassageResult(res, 'pretty');
+    assert.match(prettyOut, /Книга «Буття» відсутня у модулі UBT/);
+
+    const mdOut = formatPassageResult(res, 'md');
+    assert.match(mdOut, /Книга «Буття» відсутня у модулі UBT/);
+  });
 });
+
 

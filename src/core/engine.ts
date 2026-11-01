@@ -786,6 +786,52 @@ export class MyBibleCoreEngine {
         }
       }
 
+      let missingBookHint: string | undefined;
+      if (verses.length === 0) {
+        const moduleBooks = mod.getBooks();
+        const hasBook = moduleBooks.some(
+          (b) => b.canonicalBookNumber === parsedRef.bookNumber,
+        );
+        if (!hasBook && moduleBooks.length > 0) {
+          const canonicalBook = getBookByNumber(parsedRef.bookNumber);
+          const bookLabel = canonicalBook?.longNameUa ?? parsedRef.bookName;
+          const modUpper = metadata.id.toUpperCase();
+          const ntBooks = moduleBooks.filter((b) => b.isNewTestament);
+          const otBooks = moduleBooks.filter((b) => !b.isNewTestament);
+
+          let coverageDesc: string;
+          if (otBooks.length === 0 && ntBooks.length === 27) {
+            coverageDesc = 'цей модуль містить лише 27 книг Нового Завіту: Мт – Об';
+          } else if (
+            ntBooks.length === 27 &&
+            otBooks.length === 1 &&
+            otBooks[0].canonicalBookNumber === 190
+          ) {
+            coverageDesc =
+              'цей модуль містить лише 28 книг: Псалми та 27 книг Нового Завіту: Мт – Об';
+          } else if (ntBooks.length === 0 && otBooks.length > 0) {
+            const firstOt =
+              getBookByNumber(otBooks[0].canonicalBookNumber)?.shortNameUa ??
+              otBooks[0].shortName;
+            const lastOt =
+              getBookByNumber(otBooks[otBooks.length - 1].canonicalBookNumber)
+                ?.shortNameUa ?? otBooks[otBooks.length - 1].shortName;
+            coverageDesc = `цей модуль містить лише ${otBooks.length} книг Старого Завіту: ${firstOt} – ${lastOt}`;
+          } else {
+            const firstB =
+              getBookByNumber(moduleBooks[0].canonicalBookNumber)?.shortNameUa ??
+              moduleBooks[0].shortName;
+            const lastB =
+              getBookByNumber(
+                moduleBooks[moduleBooks.length - 1].canonicalBookNumber,
+              )?.shortNameUa ?? moduleBooks[moduleBooks.length - 1].shortName;
+            coverageDesc = `цей модуль містить лише ${moduleBooks.length} книг: ${firstB} – ${lastB}`;
+          }
+
+          missingBookHint = `Книга «${bookLabel}» відсутня у модулі ${modUpper} (${coverageDesc}).`;
+        }
+      }
+
       return {
         query: passage,
         parsedReference: parsedRef,
@@ -793,6 +839,7 @@ export class MyBibleCoreEngine {
         module: metadata,
         verses,
         ...(versificationInfo ? { versificationInfo } : {}),
+        ...(missingBookHint ? { missingBookHint } : {}),
       };
     } finally {
       mod.close();

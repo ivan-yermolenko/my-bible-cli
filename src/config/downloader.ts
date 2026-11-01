@@ -14,6 +14,7 @@ import type {
 export type RemoteModuleSourceType =
   | 'sqlite'
   | 'beblia-xml'
+  | 'ebible-vpl-zip'
   | 'builtin-sample'
   | 'biblequote-zip'
   | 'biblequote-dict'
@@ -82,7 +83,7 @@ export const REMOTE_MODULES_CATALOG: RemoteModuleCatalogItem[] = [
     tradition: 'MT',
   },
 
-  // 1.2 Beblia XML-to-MyBible SQLite3 builds
+  // 1.2 Beblia XML & eBible VPL builds
   {
     id: 'ubt',
     aliases: ['tub'],
@@ -120,13 +121,13 @@ export const REMOTE_MODULES_CATALOG: RemoteModuleCatalogItem[] = [
   {
     id: 'npu',
     fileName: 'NPU.bbl.mybible',
-    name: 'Новий Переклад Українською (НПУ 2022, Biblica)',
+    name: 'Новий Переклад Українською (НПУ 2022, Biblica — НЗ і Псалми)',
     language: 'uk',
     type: 'bible',
-    sourceType: 'beblia-xml',
-    url: `${BEBLIA_BASE_URL}/Ukrainian2022Bible.xml`,
+    sourceType: 'ebible-vpl-zip',
+    url: 'https://ebible.org/Scriptures/ukronpu_vpl.zip',
     defaultPreset: true,
-    tradition: 'MT',
+    tradition: 'LXX',
   },
   {
     id: 'umt',
@@ -680,6 +681,8 @@ export function resolveBibleQuoteBookNumber(
   if (book) return book.bookNumber;
 
   const cleaned = fullName
+    .replace(/^книга\s+\d+\s*[-–—]\s*/i, '')
+    .replace(/^книга\s+(?:пророка\s+)?/i, '')
     .replace(/^([1-3])-?[ея]\s+/i, '$1 ')
     .replace(
       /^(от|к|послание к|послание|первое послание|второе послание|третье послание|соборное послание)\s+/i,
@@ -688,6 +691,21 @@ export function resolveBibleQuoteBookNumber(
     .trim();
   book = findBookByAlias(cleaned);
   if (book) return book.bookNumber;
+
+  // Dauma OT thematic titles mapping
+  const lowerCleaned = cleaned.toLowerCase();
+  if (/сотворение мира|рождение израиля/.test(lowerCleaned)) return 10; // Genesis
+  if (/из египта в ханаан|десять заповедей/.test(lowerCleaned)) return 20; // Exodus
+  if (/святой бог и его святой народ/.test(lowerCleaned)) return 30; // Leviticus - Deuteronomy
+  if (/времена судей/.test(lowerCleaned)) return 70; // Judges
+  if (/от саула к соломону/.test(lowerCleaned)) return 90; // 1-2 Samuel
+  if (/разделенное царство|десятиколенное царство/.test(lowerCleaned)) return 110; // 1 Kings
+  if (/двухколенное царство|в изгнании/.test(lowerCleaned)) return 120; // 2 Kings
+  if (/восстановление/.test(lowerCleaned)) return 150; // Ezra / Nehemiah
+  if (/екклесиаст/.test(lowerCleaned)) return 210; // Ecclesiastes
+  if (/песнь песней/.test(lowerCleaned)) return 220; // Song of Solomon
+  if (/плач иеремии/.test(lowerCleaned)) return 250; // Lamentations
+  if (/агтея|аггея/.test(lowerCleaned)) return 370; // Haggai
 
   if (shortName) {
     const tokens = shortName.split(/[\s,;]+/).filter(Boolean);
@@ -698,7 +716,7 @@ export function resolveBibleQuoteBookNumber(
     }
   }
 
-  const normalizedFull = fullName
+  const normalizedFull = cleaned
     .replace(/[^a-zA-Zа-яА-ЯіїєґІЇЄҐ0-9]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -999,6 +1017,157 @@ export function compileBebliaXmlToSqlite(
 }
 
 /**
+ * Compiles an eBible.org VPL (Verse-Per-Line) ZIP archive (e.g. `ukronpu_vpl.zip` with NT + Psalms)
+ * into a MyBible `.bbl.mybible` SQLite3 database.
+ */
+export function compileEbibleVplZipToSqlite(
+  zipBuffer: Buffer,
+  targetFilePath: string,
+  catalogItem: RemoteModuleCatalogItem,
+): { booksInserted: number; versesInserted: number } {
+  const files = extractAllFilesFromZipBuffer(zipBuffer);
+  const vplEntry =
+    [...files.entries()].find(([fn]) => fn.toLowerCase().endsWith('_vpl.txt')) ??
+    [...files.entries()].find(([fn]) => fn.toLowerCase().endsWith('.vpl')) ??
+    [...files.entries()].find(([fn]) => fn.toLowerCase().endsWith('.xml'));
+
+  if (!vplEntry) {
+    throw new Error('VPL text/XML file not found inside eBible VPL ZIP archive.');
+  }
+
+  const rawText = decodeRawText(vplEntry[1], 'utf-8');
+  const dir = path.dirname(targetFilePath);
+  fs.mkdirSync(dir, { recursive: true });
+  if (fs.existsSync(targetFilePath)) {
+    fs.unlinkSync(targetFilePath);
+  }
+
+  const db = new DatabaseSync(targetFilePath);
+  let booksInserted = 0;
+  let versesInserted = 0;
+
+  try {
+    db.exec(`
+      CREATE TABLE info (name TEXT, value TEXT);
+      CREATE TABLE books (book_number NUMERIC, short_name TEXT, long_name TEXT, book_color TEXT);
+      CREATE TABLE verses (book_number NUMERIC, chapter NUMERIC, verse NUMERIC, text TEXT);
+    `);
+
+    const insertInfo = db.prepare('INSERT INTO info (name, value) VALUES (?, ?)');
+    const insertBook = db.prepare(
+      'INSERT INTO books (book_number, short_name, long_name, book_color) VALUES (?, ?, ?, ?)',
+    );
+    const insertVerse = db.prepare(
+      'INSERT INTO verses (book_number, chapter, verse, text) VALUES (?, ?, ?, ?)',
+    );
+
+    db.exec('BEGIN TRANSACTION');
+
+    insertInfo.run('description', catalogItem.name);
+    insertInfo.run('language', catalogItem.language);
+    insertInfo.run('version', '1.0');
+    if (catalogItem.tradition) {
+      insertInfo.run('versification', catalogItem.tradition);
+    }
+
+    const useCyrillicNames =
+      catalogItem.language === 'uk' || catalogItem.language === 'ru';
+    const seenBooks = new Set<number>();
+
+    // Check if XML format (<v b="PSA" c="22" v="1">...</v>) or plain VPL line format (PSA 22:1 ...)
+    if (rawText.includes('<v ') && rawText.includes('b=')) {
+      const vRegex = /<v\s+b=["']([A-Za-z0-9]+)["']\s+c=["'](\d+)["']\s+v=["'](\d+)["'][^>]*>([\s\S]*?)<\/v>/gi;
+      let match: RegExpExecArray | null;
+      while ((match = vRegex.exec(rawText)) !== null) {
+        const bookAbbr = match[1];
+        const chapterNum = Number.parseInt(match[2], 10);
+        const verseNum = Number.parseInt(match[3], 10);
+        const verseText = decodeXmlEntities(match[4]).replace(/\s+/g, ' ').trim();
+        const bookInfo = findBookByAlias(bookAbbr);
+        if (!bookInfo || !verseText) continue;
+
+        if (!seenBooks.has(bookInfo.bookNumber)) {
+          seenBooks.add(bookInfo.bookNumber);
+          const shortName = useCyrillicNames
+            ? catalogItem.language === 'ru'
+              ? bookInfo.shortNameRu
+              : bookInfo.shortNameUa
+            : bookInfo.shortNameEn;
+          const longName = useCyrillicNames
+            ? catalogItem.language === 'ru'
+              ? bookInfo.longNameRu
+              : bookInfo.longNameUa
+            : bookInfo.longNameEn;
+          insertBook.run(
+            bookInfo.bookNumber,
+            shortName,
+            longName,
+            bookInfo.bookNumber < 470 ? '#4a6da7' : '#8b4513',
+          );
+          booksInserted++;
+        }
+
+        insertVerse.run(bookInfo.bookNumber, chapterNum, verseNum, verseText);
+        versesInserted++;
+      }
+    } else {
+      const lines = rawText.split(/\r?\n/);
+      const lineRegex = /^([1-3]?[A-Za-z]+)\s+(\d+):(\d+)\s+(.+)$/;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const m = trimmed.match(lineRegex);
+        if (!m) continue;
+        const bookAbbr = m[1];
+        const chapterNum = Number.parseInt(m[2], 10);
+        const verseNum = Number.parseInt(m[3], 10);
+        const verseText = decodeXmlEntities(m[4]).replace(/\s+/g, ' ').trim();
+        const bookInfo = findBookByAlias(bookAbbr);
+        if (!bookInfo || !verseText) continue;
+
+        if (!seenBooks.has(bookInfo.bookNumber)) {
+          seenBooks.add(bookInfo.bookNumber);
+          const shortName = useCyrillicNames
+            ? catalogItem.language === 'ru'
+              ? bookInfo.shortNameRu
+              : bookInfo.shortNameUa
+            : bookInfo.shortNameEn;
+          const longName = useCyrillicNames
+            ? catalogItem.language === 'ru'
+              ? bookInfo.longNameRu
+              : bookInfo.longNameUa
+            : bookInfo.longNameEn;
+          insertBook.run(
+            bookInfo.bookNumber,
+            shortName,
+            longName,
+            bookInfo.bookNumber < 470 ? '#4a6da7' : '#8b4513',
+          );
+          booksInserted++;
+        }
+
+        insertVerse.run(bookInfo.bookNumber, chapterNum, verseNum, verseText);
+        versesInserted++;
+      }
+    }
+
+    db.exec('CREATE INDEX idx_verses_lookup ON verses (book_number, chapter, verse);');
+    db.exec('COMMIT');
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // ignore
+    }
+    throw err;
+  } finally {
+    db.close();
+  }
+
+  return { booksInserted, versesInserted };
+}
+
+/**
  * Compiles a BibleQuote module (from unzipped files Map) into a MyBible SQLite database.
  * Supports both Bible translations (`.bbl.mybible`) and commentaries (`.cmt.mybible`).
  */
@@ -1130,7 +1299,7 @@ export function compileBibleQuoteToSqlite(
 
     db.exec('BEGIN TRANSACTION');
 
-    const cleanVerseRegex = /<p\b[^>]*>\s*(?:<[bi]>)?\s*(\d+)\.?\s*(?:<\/[bi]>)?\s*([\s\S]*?)(?=<p\b|$)/gi;
+    const cleanVerseRegex = /<p\b[^>]*>\s*(?:<(?:[bi]|sup)>)?\s*(\d+)\.?\s*(?:<\/(?:[bi]|sup)>)?\s*([\s\S]*?)(?=<p\b|$)/gi;
 
     for (const bqBook of books) {
       const bookNumber = resolveBibleQuoteBookNumber(bqBook.fullName, bqBook.shortName);
@@ -1188,16 +1357,39 @@ export function compileBibleQuoteToSqlite(
       }
 
       let chapterCounter = 0;
-      for (const chChunk of chapters) {
+      for (let cIdx = 0; cIdx < chapters.length; cIdx++) {
+        const chChunk = chapters[cIdx];
         if (!chChunk.trim()) continue;
 
-        // Determine chapter number
+        // cIdx === 0 is always the HTML preamble before the first ChapterSign!
+        if (cIdx === 0 && chapters.length > 1) {
+          if (isCommentary && insertCommentary) {
+            const stripped = chChunk.replace(/<[^>]+>/g, '').trim();
+            if (stripped.length > 80) {
+              insertCommentary.run(bookNumber, 1, 0, 1, 0, chChunk.trim());
+              entriesInserted++;
+            }
+          }
+          continue;
+        }
+
+        // Determine chapter number from the heading immediately following ChapterSign
         let chapterNum = 0;
-        const headSample = chChunk.slice(0, 300);
-        const numMatch = headSample.match(/(?:глава|chapter|псалом|psalm)\s*(\d+)/i);
-        if (numMatch) {
-          chapterNum = Number.parseInt(numMatch[1], 10);
-        } else if (/(?:предисловие|введение|preface|intro)/i.test(headSample)) {
+        const headSample = chChunk.slice(0, 250);
+        const leadingDigits = headSample.match(/^\s*(?:<[^>]+>\s*)*(\d+)\s*[.<]/);
+        const namedChap = headSample.match(/(?:глава|chapter|псалом|psalm)\s*(\d+)/i);
+        const endLineDigits = headSample.match(/^[^\r\n<]*?\b(\d+)\s*(?:<\/h\d>|\r|\n|<)/i);
+
+        if (namedChap) {
+          chapterNum = Number.parseInt(namedChap[1], 10);
+          chapterCounter = chapterNum;
+        } else if (leadingDigits && Number.parseInt(leadingDigits[1], 10) <= 151) {
+          chapterNum = Number.parseInt(leadingDigits[1], 10);
+          chapterCounter = chapterNum;
+        } else if (endLineDigits && Number.parseInt(endLineDigits[1], 10) <= 151) {
+          chapterNum = Number.parseInt(endLineDigits[1], 10);
+          chapterCounter = chapterNum;
+        } else if (/(?:предисловие|введение|preface|intro)/i.test(headSample) && chapterCounter === 0) {
           chapterNum = 0;
         } else {
           chapterCounter++;
@@ -1207,25 +1399,46 @@ export function compileBibleQuoteToSqlite(
         if (isCommentary && insertCommentary) {
           // Parse verse blocks from paragraphs
           const paras = chChunk.split(/<p\b[^>]*>/i);
-          let currentEntry: { vFrom: number; vTo: number; text: string } | null = null;
+          let currentEntry: { chFrom: number; vFrom: number; chTo: number; vTo: number; text: string } | null = null;
 
           for (const rawP of paras) {
             const p = rawP.replace(/<\/p>/gi, '').trim();
             if (!p || p === '&nbsp;' || p === '<br>') continue;
 
-            // Check if paragraph starts with verse number or range:
-            // e.g. 1-39 ..., 1 ..., <b>1.</b>, <b>1-3</b>, <b>28. Притом...
+            // 1. Check standard leading verse number or range: e.g. "1-39 ...", "<b>1.</b>", "<b>28. Притом...</b>"
             const vMatch = p.match(
-              /^(?:<[bi]>)?\s*(\d+)(?:\s*[-–—]\s*(\d+))?\.?\s*(?:<\/[bi]>)?([\s\S]*)/i,
+              /^(?:<(?:[bi]|sup)>)?\s*(\d+)(?:[.,]\s*(\d+)|\s*[-–—]\s*(\d+))?\.?\s*(?:<\/(?:[bi]|sup)>)?([\s\S]*)/i,
+            );
+            // 2. Check parenthetical range inside bold header (e.g. McArthur: "<b>Текст... (8:28-30)</b>" or "(1:1-4)")
+            const parenRangeMatch = p.match(
+              /<b>[\s\S]*?\((\d+)\s*:\s*(\d+)(?:\s*[-–—]\s*(?:(\d+)\s*:\s*)?(\d+))?\)\s*(?:<\/i>)?\s*<\/b>/i,
             );
 
-            if (vMatch && Number.parseInt(vMatch[1], 10) < 250) {
+            if (parenRangeMatch) {
               if (currentEntry) {
                 insertCommentary.run(
                   bookNumber,
-                  chapterNum,
+                  currentEntry.chFrom,
                   currentEntry.vFrom,
-                  chapterNum,
+                  currentEntry.chTo,
+                  currentEntry.vTo,
+                  currentEntry.text.trim(),
+                );
+                entriesInserted++;
+                currentEntry = null;
+              }
+              const chFrom = Number.parseInt(parenRangeMatch[1], 10);
+              const vFrom = Number.parseInt(parenRangeMatch[2], 10);
+              const chTo = parenRangeMatch[3] ? Number.parseInt(parenRangeMatch[3], 10) : chFrom;
+              const vTo = parenRangeMatch[4] ? Number.parseInt(parenRangeMatch[4], 10) : vFrom;
+              currentEntry = { chFrom, vFrom, chTo, vTo, text: p };
+            } else if (vMatch && Number.parseInt(vMatch[1], 10) < 200) {
+              if (currentEntry) {
+                insertCommentary.run(
+                  bookNumber,
+                  currentEntry.chFrom,
+                  currentEntry.vFrom,
+                  currentEntry.chTo,
                   currentEntry.vTo,
                   currentEntry.text.trim(),
                 );
@@ -1234,7 +1447,11 @@ export function compileBibleQuoteToSqlite(
               }
 
               let vFrom = Number.parseInt(vMatch[1], 10);
-              let vTo = vMatch[2] ? Number.parseInt(vMatch[2], 10) : vFrom;
+              let vTo = vMatch[2]
+                ? Number.parseInt(vMatch[2], 10)
+                : vMatch[3]
+                  ? Number.parseInt(vMatch[3], 10)
+                  : vFrom;
 
               // If leading bold block has multiple verses like "28. Притом... 29. Ибо... 30. А кого..."
               const boldMatch = p.match(/^<b>([\s\S]*?)<\/b>/i);
@@ -1248,12 +1465,14 @@ export function compileBibleQuoteToSqlite(
                 }
               }
 
-              currentEntry = { vFrom, vTo, text: p };
+              const effCh = chapterNum || 1;
+              currentEntry = { chFrom: effCh, vFrom, chTo: effCh, vTo, text: p };
             } else {
               if (currentEntry) {
                 currentEntry.text += `<p>${p}`;
               } else {
-                currentEntry = { vFrom: 0, vTo: 0, text: p };
+                const effCh = chapterNum || 1;
+                currentEntry = { chFrom: effCh, vFrom: 0, chTo: effCh, vTo: 0, text: p };
               }
             }
           }
@@ -1261,15 +1480,15 @@ export function compileBibleQuoteToSqlite(
           if (currentEntry) {
             insertCommentary.run(
               bookNumber,
-              chapterNum,
+              currentEntry.chFrom,
               currentEntry.vFrom,
-              chapterNum,
+              currentEntry.chTo,
               currentEntry.vTo,
               currentEntry.text.trim(),
             );
             entriesInserted++;
           }
-        } else if (insertVerse) {
+        } else if (insertVerse && chapterNum >= 1) {
           // Parse verses for Bible translation
           cleanVerseRegex.lastIndex = 0;
           let vMatch: RegExpExecArray | null;
@@ -2043,6 +2262,15 @@ export async function downloadAndInstallModule(
     const xmlText = await response.text();
     const tmpPath = `${filePath}.tmp`;
     const stats = compileBebliaXmlToSqlite(xmlText, tmpPath, item);
+    fs.renameSync(tmpPath, filePath);
+    options.onProgress?.(
+      `[OK]   Compiled ${item.id} (${stats.booksInserted} books, ${stats.versesInserted} verses) -> ${filePath}`,
+    );
+  } else if (item.sourceType === 'ebible-vpl-zip') {
+    options.onProgress?.('[UNZIP] Extracting eBible VPL archive...');
+    const zipBuf = Buffer.from(await response.arrayBuffer());
+    const tmpPath = `${filePath}.tmp`;
+    const stats = compileEbibleVplZipToSqlite(zipBuf, tmpPath, item);
     fs.renameSync(tmpPath, filePath);
     options.onProgress?.(
       `[OK]   Compiled ${item.id} (${stats.booksInserted} books, ${stats.versesInserted} verses) -> ${filePath}`,

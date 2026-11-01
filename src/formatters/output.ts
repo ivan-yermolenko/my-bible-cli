@@ -106,7 +106,11 @@ export function formatPassageResult(
     }
 
     if (result.verses.length === 0) {
-      lines.push('> *(Вірші не знайдено / No verses found)*');
+      lines.push(
+        result.missingBookHint
+          ? `> *(${result.missingBookHint})*`
+          : '> *(Вірші не знайдено / No verses found)*',
+      );
     } else {
       for (const v of result.verses) {
         const vLabel =
@@ -157,7 +161,11 @@ export function formatPassageResult(
   lines.push(pc.dim('─'.repeat(Math.min(72, Math.max(36, title.length + 14)))));
 
   if (result.verses.length === 0) {
-    lines.push(pc.red('Вірші не знайдено у модулі / No verses found.'));
+    lines.push(
+      pc.red(
+        result.missingBookHint ?? 'Вірші не знайдено у модулі / No verses found.',
+      ),
+    );
   } else {
     for (const v of result.verses) {
       const vLabel =

@@ -121,6 +121,8 @@ export interface PassageQueryResult {
   module: ModuleMetadata;
   verses: BibleVerse[];
   versificationInfo?: PsalmConversionResult;
+  /** Helpful message when the requested book is absent from the module */
+  missingBookHint?: string;
 }
 
 /**
