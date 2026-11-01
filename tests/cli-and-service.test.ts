@@ -231,12 +231,12 @@ describe('Remote Catalog, MyBibleService & Output Formatters', () => {
   });
 
   it('Commentary and Dictionary queries and formatters work out of the box', () => {
-    const cmt = service.getCommentaries('Пс 22:1-3');
+    const cmt = service.getCommentaries('Пс 22:1-3', { mod: 'sample' });
     assert.ok(cmt.entries.length >= 1);
     const cmtMd = formatCommentaryEntries(cmt.reference, cmt.entries, 'md');
     assert.match(cmtMd, /Господь — Пастир мій/);
 
-    const dct = service.getDictionary('Благодать');
+    const dct = service.getDictionary('Благодать', { mod: 'sample' });
     assert.equal(dct.entries.length, 1);
     const dctMd = formatDictionaryEntries(dct.query, dct.entries, 'md');
     assert.match(dctMd, /незаслужена Божа прихильність/);

@@ -470,10 +470,20 @@ export class IsomorphicBibleModule {
       definition: string;
     }
 
+    const searchTerms = [trimmedTopic];
+    const strongMatch = trimmedTopic.match(/^([HGhg])0*(\d+)$/i);
+    if (strongMatch) {
+      const prefix = strongMatch[1].toUpperCase();
+      const num = strongMatch[2];
+      searchTerms.push(`${prefix}${num}`);
+      searchTerms.push(`${prefix.toLowerCase()}${num}`);
+    }
+
     // 1. Try exact case-insensitive match first
+    const placeholders = searchTerms.map(() => '?').join(', ');
     let rows = this.driver.all<RawDictionaryRow>(
-      'SELECT topic, definition FROM dictionary WHERE LOWER(topic) = LOWER(?)',
-      [trimmedTopic],
+      `SELECT topic, definition FROM dictionary WHERE LOWER(topic) IN (${placeholders})`,
+      searchTerms.map((t) => t.toLowerCase()),
     );
 
     // 2. Fallback to LIKE match if no exact hit
@@ -856,20 +866,56 @@ export class MyBibleCoreEngine {
           'No commentary modules (.cmt.mybible) installed. Run "mybible setup" to install sample commentary.',
         );
       }
-      modId = cmts[0].id;
+      const preferred = [
+        'ngsb',
+        'calvin',
+        'henry',
+        'dauma',
+        'mcarthur',
+        'macdonald',
+        'lopukhin',
+        'spurgeon',
+        'sample',
+      ];
+      const foundPref = preferred.find((p) =>
+        cmts.some((m) => m.id.toLowerCase() === p),
+      );
+      modId = foundPref ?? cmts[0].id;
     }
 
     const { driver, metadata } = this.provider.openModule(modId, 'commentary');
     const mod = new IsomorphicBibleModule(driver, metadata.id, metadata.filePath);
     try {
-      const entries = mod.getCommentaries(
-        parsedRef,
-        {
-          keepNotes: options.keepNotes,
-          markdownItalics: options.format === 'md',
-        },
-        metadata.id,
-      );
+      const cleanOpts = {
+        keepNotes: options.keepNotes,
+        markdownItalics: options.format === 'md',
+      };
+
+      // Psalms Versification Mapping (LXX <-> MT)
+      if (parsedRef.bookNumber === 190) {
+        const modTradition: VersificationTradition =
+          metadata.tradition ?? (metadata.language === 'en' ? 'MT' : 'LXX');
+        const inputTradition: VersificationTradition =
+          parsedRef.inputTraditionHint ?? 'LXX';
+
+        if (inputTradition !== modTradition) {
+          const conversion = convertPsalmReference(
+            parsedRef,
+            inputTradition,
+            modTradition,
+          );
+          const allEntries: CommentaryEntry[] = [];
+          for (const targetRef of conversion.targetReferences) {
+            const res = mod.getCommentaries(targetRef, cleanOpts, metadata.id);
+            allEntries.push(...res);
+          }
+          if (allEntries.length > 0) {
+            return { reference: parsedRef, module: metadata, entries: allEntries };
+          }
+        }
+      }
+
+      const entries = mod.getCommentaries(parsedRef, cleanOpts, metadata.id);
       return { reference: parsedRef, module: metadata, entries };
     } finally {
       mod.close();
@@ -880,6 +926,7 @@ export class MyBibleCoreEngine {
     topic: string,
     options: { mod?: string; format?: OutputFormat } = {},
   ): { query: string; module: ModuleMetadata; entries: DictionaryEntry[] } {
+    const trimmedTopic = topic.trim();
     let modId = options.mod?.trim();
     if (!modId) {
       const dcts = this.provider.listModules('dictionary');
@@ -888,14 +935,33 @@ export class MyBibleCoreEngine {
           'No dictionary modules (.dct.mybible) installed. Run "mybible setup" to install sample dictionary.',
         );
       }
-      modId = dcts[0].id;
+
+      const isStrong = /^[HGhg]0*\d+$/i.test(trimmedTopic);
+      if (isStrong && dcts.some((m) => m.id.toLowerCase() === 'strong')) {
+        modId = 'strong';
+      } else {
+        const preferred = [
+          'ngsb-dict',
+          'elwell',
+          'nbd',
+          'brockhaus',
+          'nikifor',
+          'men',
+          'strong',
+          'sample',
+        ];
+        const foundPref = preferred.find((p) =>
+          dcts.some((m) => m.id.toLowerCase() === p),
+        );
+        modId = foundPref ?? dcts[0].id;
+      }
     }
 
     const { driver, metadata } = this.provider.openModule(modId, 'dictionary');
     const mod = new IsomorphicBibleModule(driver, metadata.id, metadata.filePath);
     try {
       const entries = mod.getDictionaryDefinition(
-        topic,
+        trimmedTopic,
         { markdownItalics: options.format === 'md' },
         metadata.id,
       );

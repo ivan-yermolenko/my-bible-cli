@@ -188,10 +188,11 @@ export interface BibleSearchResult {
  * Item in MyBible Extra Registry (e.g. from http://mybible.infoo.pro/extra.registry.json).
  */
 export interface ExtraRegistryItem {
-  url: string;
+  url?: string;
+  download_url?: string;
   file_name: string;
-  language: string;
-  description: string;
+  language?: string;
+  description?: string;
   version?: string;
   size?: number;
   abbreviation?: string;

@@ -236,12 +236,13 @@ export function createCliProgram(service = new MyBibleService()): Command {
         for (const item of REMOTE_MODULES_CATALOG) {
           const isInst = installedIds.has(item.id.toLowerCase());
           const status = isInst ? pc.green('✔ installed') : pc.dim('  available');
-          const idPad = item.id.padEnd(8);
-          const langPad = item.language.toUpperCase().padEnd(3);
+          const idPad = item.id.padEnd(12);
+          const typePad = item.type.padEnd(11);
+          const langPad = item.language.toUpperCase().padEnd(5);
           const tradPad = (item.tradition ?? '-').padEnd(4);
           const presetTag = item.defaultPreset ? pc.cyan('[preset]') : '        ';
           console.log(
-            `${status}  ${pc.bold(idPad)} ${pc.yellow(langPad)} ${pc.magenta(tradPad)} ${presetTag} ${item.name}`,
+            `${status}  ${pc.bold(idPad)} ${pc.dim(typePad)} ${pc.yellow(langPad)} ${pc.magenta(tradPad)} ${presetTag} ${item.name}`,
           );
         }
         return;
@@ -266,7 +267,7 @@ export function createCliProgram(service = new MyBibleService()): Command {
       );
       console.log(pc.dim('─'.repeat(78)));
       for (const m of installed) {
-        const idPad = m.id.padEnd(10);
+        const idPad = m.id.padEnd(12);
         const typePad = m.type.padEnd(11);
         const langPad = (m.language ?? '-').toUpperCase().padEnd(4);
         const tradPad = (m.tradition ?? '-').padEnd(4);
@@ -281,8 +282,11 @@ export function createCliProgram(service = new MyBibleService()): Command {
   program
     .command('download')
     .description('Download and compile Bible modules from the catalog or extra registry')
-    .argument('[modules...]', 'Module IDs to download (e.g., ubt ubio npu rst kjv esv)')
-    .option('-a, --all', 'Download all 19 modules from the catalog')
+    .argument('[modules...]', 'Module IDs to download (e.g., ubt ubio npu rst kjv esv calvin ngsb strong)')
+    .option('-a, --all', 'Download and compile ALL modules from the catalog')
+    .option('-c, --commentaries', 'Download and compile all commentary modules (.cmt.mybible)')
+    .option('--dictionaries', 'Download and compile all dictionary modules (.dct.mybible)')
+    .option('-b, --bibles', 'Download and compile all Bible translation modules (.bbl.mybible)')
     .option('-p, --preset', 'Download the default preset bundle of 13 translations')
     .option('-g, --global', 'Install into ~/.local/share/mybible/modules instead of ./modules')
     .option('-d, --dir <path>', 'Custom target directory for downloaded modules')
@@ -321,6 +325,9 @@ export function createCliProgram(service = new MyBibleService()): Command {
         const results = await downloadModuleBundle({
           moduleIds,
           all: Boolean(opts.all),
+          commentaries: Boolean(opts.commentaries),
+          dictionaries: Boolean(opts.dictionaries),
+          bibles: Boolean(opts.bibles),
           preset: Boolean(opts.preset),
           targetDir,
           overwrite: Boolean(opts.overwrite),
