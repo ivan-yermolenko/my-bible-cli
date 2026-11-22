@@ -50,7 +50,7 @@ npm run setup:all      # Build and download all modules in the catalog
 
 ## Module Catalog (`mybible modules --remote`)
 
-See [AGENTS.md](AGENTS.md#3-повний-реєстр-локально-встановлених-модулів-modules--100-модулів) for the full table of all **100 modules**.
+See [AGENTS.md](AGENTS.md#3-full-registry-of-pre-installed-modules-modules--100-modules) for the full table of all **100 modules**.
 
 ### Bible Translations (78 modules)
 - **Ukrainian (16):** `ubt` (`tub`, Turkoniak UBT, LXX), `utt` (UTT 2011, LXX), `ubio` (Ohienko 1962, MT), `ubio88` (Ohienko 1988, LXX), `cuv` (`cuv23`, `sup` — Contemporary Ukrainian Translation UBT 2023, MT), `npu` (New Ukrainian Translation 2022, Biblica: NT + Psalms, LXX), `umt` (UMT 2007, MT), `hom` (Khomenko 1963, MT), `ukrk` (Kulish/Puliui 1905, MT), `uk1903` (Kulish/Levytskyi 1903, MT), `fil` (Filaret 2004, LXX), `gyz` (Hyzha 2006, LXX), `ukder` (Derkach 1992, MT), `nup` (Popchenko 2021, NT, MT), `lcvu` (Zhuromskyi literal w/ Strong's, LXX), `igrb` (Greek-Ukrainian Interlinear, LXX).

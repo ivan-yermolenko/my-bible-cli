@@ -1,131 +1,132 @@
-# AGENTS.md — Інструкція та Операційний Контракт для AI-Агентів і Розробників
+# AGENTS.md — Operational Contract & Technical Reference for AI Agents and Developers
 
-> **Призначення документа:** Цей файл є обов'язковим технічним та операційним контрактом для автономних AI-агентів (LLM subagents, AutoGPT, LangChain/LlamaIndex pipelines), розробників та автоматизованих скриптів, які взаємодіють із репозиторієм **MyBible CLI Toolkit (`mybible`)**.
-
----
-
-## Зміст
-
-1. [Призначення та Огляд (`MyBible CLI Toolkit`)](#1-призначення-та-огляд-mybible-cli-toolkit)
-2. [Швидка шпаргалка команд CLI для AI-агентів (Recommended Agent Patterns)](#2-швидка-шпаргалка-команд-cli-для-ai-агентів-recommended-agent-patterns)
-3. [Повний реєстр локально встановлених модулів (`modules/`)](#3-повний-реєстр-локально-встановлених-модулів-modules)
-4. [Критичні правила нумерації Псалмів (LXX vs MT Versification Contract)](#4-критичні-правила-нумерації-псалмів-lxx-vs-mt-versification-contract)
-5. [Архітектура проєкту для розробки та розширення (Codebase Map)](#5-архітектура-проєкту-для-розробки-та-розширення-codebase-map)
-6. [Специфікація Вбудованого HTTP REST API](#6-специфікація-вбудованого-http-rest-api)
+> **Purpose:** This document serves as the authoritative technical and operational contract for autonomous AI agents (LLM subagents, AutoGPT, LangChain/LlamaIndex pipelines), developers, and automation scripts interacting with the **MyBible CLI Toolkit (`mybible`)** repository.
 
 ---
 
-## 1. Призначення та Огляд (`MyBible CLI Toolkit`)
+## Table of Contents
 
-`mybible-cli` — це надшвидкий, повністю автономний офлайн-рушій та CLI-інструментарій для миттєвої роботи з модулями Біблії у форматі **MyBible SQLite** (`.bbl.mybible`, `.cmt.mybible`, `.dct.mybible`, `.SQLite3`).
-
-### Головні переваги для AI-агентів:
-- **Миттєвий холодний старт (< 50 мс):** Рушій використовує синхронний нативний рушій `node:sqlite` (Node.js 22.5+), що не вимагає важкої ініціалізації середовища, запуску сторонніх демонів чи компіляції C++ бінарників (`node-gyp`).
-- **Автоматичне узгодження традицій Псалмів (LXX ↔ MT):** Розв'язує фундаментальну проблему біблеїстики — розбіжність нумерації розділів і віршів між східною Септуагінтою (LXX: УБТ, РСТ, Філарет) та західною Масоретською традицією (MT: KJV, ESV, НПУ, Огієнко).
-- **Повна ізоморфність ядра:** Ядро (`src/core/`) не залежить від Node.js, ОС чи файлової системи, реалізуючи абстракцію `SqlStorageDriver`. Його можна вбудовувати у браузери (WebAssembly: `sql.js`, `wa-sqlite`), Cloudflare Workers, Edge Runtimes або Bun/Deno.
-- **Два способи виконання:**
-  1. **CLI / Bash:** Глобальна команда `mybible` (або прямий виклик `node --no-warnings bin/mybible.js`).
-  2. **TypeScript / ESM модуль:** Імпорт з `mybible-cli` (Node.js із вбудованим `ModuleRegistry`) або `mybible-cli/core` (чистий ізоморфний рушій).
+1. [Overview (`MyBible CLI Toolkit`)](#1-overview-mybible-cli-toolkit)
+2. [CLI Cheat Sheet for AI Agents (Recommended Patterns)](#2-cli-cheat-sheet-for-ai-agents-recommended-patterns)
+3. [Full Registry of Pre-Installed Modules (`modules/`)](#3-full-registry-of-pre-installed-modules-modules--100-modules)
+4. [Psalms Versification Contract (LXX vs MT)](#4-psalms-versification-contract-lxx-vs-mt)
+5. [Codebase Architecture & Extension Map](#5-codebase-architecture--extension-map)
+6. [Built-in HTTP REST API Specification](#6-built-in-http-rest-api-specification)
+7. [Programmatic Usage (TypeScript / Node.js)](#7-programmatic-usage-typescript--nodejs)
 
 ---
 
-## 2. Швидка шпаргалка команд CLI для AI-агентів (Recommended Agent Patterns)
+## 1. Overview (`MyBible CLI Toolkit`)
 
-Коли AI-агент формує запит до Писання у терміналі, слід обирати прапорець `--format` відповідно до подальшого використання:
-- `--format md` — **Рекомендовано для звітів, конспектів проповідей, devotions та відповідей користувачу.** Генерує валідний GitHub Flavored Markdown із цитатами (`> **1** ...`) та метаданими.
-- `--format json` — **Рекомендовано для програмної обробки та парсингу.** Повертає типізовану структуру даних із масивом віршів, номерами книг і координатами мапінгу.
-- `--format raw` — **Рекомендовано для bash-пайплайнів** (`grep`, `awk`, `sed`, копіювання в буфер). Тільки чистий текст без форматування і тегів.
-- `--format pretty` — Кольоровий вивід для інтерактивного читання людиною в терміналі.
+`mybible-cli` is an ultra-fast, fully offline engine and CLI toolkit for querying **MyBible SQLite** modules (`.bbl.mybible`, `.cmt.mybible`, `.dct.mybible`, `.SQLite3`).
 
-### 2.1. Отримання уривка: `mybible get`
+### Key Advantages for AI Agents:
+- **Instant Cold Start (< 50 ms):** Uses Node.js 22.5+ built-in synchronous `node:sqlite`, requiring no heavy runtime initialization, external daemons, or native C++ compilation (`node-gyp`).
+- **Automatic Psalms Versification Alignment (LXX ↔ MT):** Solves the classic biblical reference mismatch between Eastern Septuagint numbering (LXX: UBT, RST, Filaret, NPU, BTI) and Western Masoretic numbering (MT: KJV, ESV, CUV, UBIO).
+- **100% Isomorphic Core:** The core engine (`src/core/`) has zero Node.js OS/FS/SQLite dependencies, relying purely on `SqlStorageDriver`. It can run directly in browsers (`sql.js`, `wa-sqlite`), Cloudflare Workers, Edge Runtimes, Bun, or Deno.
+- **Two Execution Modes:**
+  1. **CLI / Bash:** Global `mybible` command (or `node --no-warnings bin/mybible.js`).
+  2. **TypeScript / ESM Library:** Import from `mybible-cli` (Node.js with `ModuleRegistry`) or `mybible-cli/core` (pure isomorphic engine).
+
+---
+
+## 2. CLI Cheat Sheet for AI Agents (Recommended Patterns)
+
+When invoking `mybible` from a terminal or agent tool, choose `--format` based on downstream consumption:
+- `--format md` — **Recommended for study notes, sermon outlines, devotions, and user-facing responses.** Produces valid GitHub Flavored Markdown with blockquotes (`> **1** ...`) and metadata.
+- `--format json` — **Recommended for programmatic parsing.** Returns typed JSON with verse arrays, book numbers, and versification mapping coordinates.
+- `--format raw` — **Recommended for bash pipelines** (`grep`, `awk`, `sed`, clipboard). Plain text only without formatting or tags.
+- `--format pretty` — Colored terminal output for interactive human reading.
+
+### 2.1. Fetching a Passage: `mybible get`
 ```bash
-# Markdown для конспекту з перекладу УБТ (дефолтний переклад)
-mybible get "Рим 8:28-30" --format md
+# Markdown output from the default translation (UBT)
+mybible get "Rom 8:28-30" --format md
 
-# Отримання уривка з конкретного перекладу (наприклад, англійський ESV або український НПУ)
-mybible get "Ів 1:1-5" --trans esv --format md
+# Querying a specific translation (e.g., ESV or Ukrainian NPU / CUV)
+mybible get "Jn 1:1-5" --trans esv --format md
 mybible get "Мт 5:1-12" --trans npu --format json
 
-# Псалом із детальною довідкою про versification mapping (--info)
+# Psalm with detailed versification mapping note (--info)
 mybible get "Пс 22:1-6" --trans esv --info --format md
 
-# Збереження номерів Стронга або підрядкових виносок перекладача
-mybible get "Бут 1:1" --trans kjv --strongs --format raw
-mybible get "Мт 6:9-13" --trans ubt --notes --format md
+# Preserve Strong's numbers or translator footnotes
+mybible get "Gen 1:1" --trans kjv --strongs --format raw
+mybible get "Mt 6:9-13" --trans ubt --notes --format md
 
-# Вимкнення авто-мапінгу (отримати розділ і вірші строго такими, як вони записані в базі)
+# Disable automatic LXX <-> MT mapping (query literal chapter/verse numbers as stored)
 mybible get "Пс 22:1-6" --trans esv --raw-numbers --format md
 ```
 
-### 2.2. Порівняння перекладів: `mybible compare`
+### 2.2. Comparing Translations: `mybible compare`
 ```bash
-# Порівняння уривка за замовчуванням (ubt, ubio, npu, rst, kjv, esv)
-mybible compare "Ів 14:6" --format md
+# Compare default translations (ubt, ubio, npu, rst, kjv, esv)
+mybible compare "Jn 14:6" --format md
 
-# Порівняння конкретних модулів із вирівнюванням вірш-за-віршем (--verse-by-verse)
-mybible compare "Рим 8:28" --trans ubt,ubio,npu,esv --verse-by-verse --format md
+# Compare specific modules with verse-by-verse alignment (--verse-by-verse)
+mybible compare "Rom 8:28" --trans ubt,cuv,npu,esv --verse-by-verse --format md
 
-# Порівняння Псалмів між традиціями (LXX Пс 22 автоматично транслюється в MT Ps 23)
-mybible compare "Пс 22:1-3" --trans ubt,rst,ubio,kjv --format md
+# Cross-tradition Psalm comparison (LXX Ps 22 automatically maps to MT Ps 23)
+mybible compare "Пс 22:1-3" --trans ubt,cuv,bti,kjv --format md
 
-# Розбиття акростихового Псалма 9 (LXX 9:22-25 транслюється в MT Ps 10:1-4)
+# Acrostic Psalm 9 split (LXX 9:22-25 automatically maps to MT Ps 10:1-4)
 mybible compare "Пс 9:22-25" --trans ubt,rst,kjv,esv --verse-by-verse --format md
 ```
 
-### 2.3. Повнотекстовий пошук: `mybible search`
+### 2.3. Full-Text Search: `mybible search`
 ```bash
-# Пошук слова по всій Біблії
-mybible search "Благодать" --trans ubt --limit 10 --format md
+# Search across the entire Bible
+mybible search "grace" --trans esv --limit 10 --format md
 
-# Фільтрація за Заповітом: тільки Новий Завіт (--testament nt) або Старий Завіт (--testament ot)
+# Filter by Testament: New Testament only (--testament nt) or Old Testament only (--testament ot)
 mybible search "виправдання" --trans npu --testament nt --limit 20 --format json
 ```
 
-### 2.4. Перелік книг та модулів
+### 2.4. Listing Books & Modules
 ```bash
-# Перелік усіх книг перекладу та їхніх номерів
+# List all books and chapter counts in a translation
 mybible books --trans ubt --format md
 
-# Перелік локально встановлених модулів
+# List locally installed modules
 mybible modules
 
-# JSON-список модулів для AI-агента
+# JSON module list for AI agents
 mybible modules --format json
 
-# Перегляд усіх доступних модулів у віддаленому каталозі
+# List all downloadable modules in the remote catalog
 mybible modules --remote
 ```
 
-### 2.5. Завантаження та налаштування: `download` та `setup`
+### 2.5. Downloading & Setup: `download` and `setup`
 ```bash
-# Швидке розгортання стартового комплекту (базові переклади + Нова Женевська Біблія, Кальвін, Сперджен, Стронг)
+# Quick starter bundle (core translations + NGSB, Calvin, Spurgeon, Strong's)
 mybible setup
 
-# Завантаження та компіляція ВСІХ 48 модулів з каталогу (+ 2 sample = 50 модулів)
+# Download and compile ALL modules from the catalog
 mybible download --all
 
-# Завантаження за категоріями (тільки коментарі, тільки словники або тільки Біблії)
+# Download by category (commentaries only, dictionaries only, or bibles only)
 mybible download --commentaries
 mybible download --dictionaries
 mybible download --bibles
 
-# Завантаження окремих модулів за ID
+# Download specific modules by ID
 mybible download ngsb calvin henry mcarthur spurgeon strong elwell
 
-# Завантаження модуля з офіційного Extra Registry
+# Download from the official MyBible Extra Registry
 mybible download --extra-registry
 ```
 
-### 2.6. Коментарі та Словники: `comment` та `dict`
+### 2.6. Commentaries & Dictionaries: `comment` and `dict`
 ```bash
-# Запит біблійного коментаря до уривка (за замовчуванням обирає NGSB або перший доступний коментар)
-mybible comment "Рим 8:28" --format md
-mybible comment "Рим 8:28-30" --mod calvin --format md
-mybible comment "Рим 8:28" --mod mcarthur --format md
-mybible comment "Пс 22:1-6" --mod spurgeon --format md
-mybible comment "Бут 1:1" --mod henry --format md
+# Query biblical commentaries (defaults to NGSB or first available commentary)
+mybible comment "Rom 8:28" --format md
+mybible comment "Rom 8:28-30" --mod calvin --format md
+mybible comment "Rom 8:28" --mod mcarthur --format md
+mybible comment "Ps 23:1-6" --mod spurgeon --format md
+mybible comment "Gen 1:1" --mod henry --format md
 
-# Пошук богословського терміна або номера Стронга у словнику
+# Look up a theological term or Strong's number in a dictionary
 mybible dict "G25" --format md
 mybible dict "H430" --mod strong --format md
 mybible dict "Благодать" --mod elwell --format md
@@ -133,271 +134,271 @@ mybible dict "Завет" --mod ngsb-dict --format md
 mybible dict "Оправдание" --mod nbd --format md
 ```
 
-### 2.7. Локальний HTTP REST API сервер: `mybible serve`
+### 2.7. Local HTTP REST API Server: `mybible serve`
 ```bash
-# Запуск API-сервера на порту 3333
+# Start the API server on port 3333
 mybible serve --port 3333 --host 127.0.0.1
 ```
 
 ---
 
-## 3. Повний реєстр локально встановлених модулів (`modules/` — 100 модулів)
+## 3. Full Registry of Pre-Installed Modules (`modules/` — 100 Modules)
 
-У репозиторії попередньо сконфігуровано та підтримується **100 модулів** (**78 перекладів Біблії**, **14 коментарів** та **8 словників/лексиконів**):
+The repository includes and supports **100 pre-configured modules** (**78 Bible translations**, **14 commentaries**, and **8 dictionaries/lexicons**):
 
-### 3.1. Переклади Біблії (`.bbl.mybible` — 78 модулів)
+### 3.1. Bible Translations (`.bbl.mybible` — 78 Modules)
 
-| ID модуля | Файл у `modules/` | Мова | Охоплення | Традиція Псалмів | Повна назва та характеристика |
+| Module ID | File in `modules/` | Lang | Coverage | Psalms Tradition | Description |
 | :--- | :--- | :---: | :---: | :---: | :--- |
-| **`ubt`** (аліас `tub`) | `UBT.bbl.mybible` | `uk` | 66 книг | **LXX** | Українська Біблія у перекладі Рафаїла Турконяка (УБТ). Основний переклад за замовчуванням. |
-| **`utt`** | `UTT.bbl.mybible` | `uk` | 65 книг | **LXX** | Українська Біблія: Переклад Р. Турконяка 2011 (УТТ). |
-| **`ubio`** | `UBIO.bbl.mybible` | `uk` | 66 книг | **MT** | Біблія в перекладі Івана Огієнка (1962). Класичний протестантський канон. |
-| **`ubio88`** | `UBIO88.bbl.mybible` | `uk` | 66 книг | **LXX** | Біблія в перекладі І. Огієнка (видання 1988 р., нативний SQLite3). |
-| **`cuv`** (аліаси `cuv23`, `sup`) | `CUV.bbl.mybible` | `uk` | 66 книг | **MT** | **БІБЛІЯ. Сучасний переклад УБТ (CUV'23)** (2020–2023). Повний сучасний український переклад УБТ. |
-| **`npu`** | `NPU.bbl.mybible` | `uk` | **28 книг (НЗ + Псалми)** | **LXX** | Новий Переклад Українською (НПУ 2022, Biblica — Новий Завіт та Псалми). Сучасна літературна українська мова. |
-| **`umt`** | `UMT.bbl.mybible` | `uk` | 66 книг | **MT** | Свята Біблія: Сучасною Мовою (UMT 2007). Простий динамічний переклад. |
-| **`hom`** | `HOM.bbl.mybible` | `uk` | 66 книг | **MT** | Святе Письмо у перекладі Івана Хоменка (1963, Римське видання). |
-| **`ukrk`** | `UKRK.bbl.mybible` | `uk` | 66 книг | **MT** | Біблія в перекладі П. Куліша та І. Пулюя (1905). Перший повний переклад. |
-| **`uk1903`** | `UK1903.bbl.mybible` | `uk` | 66 книг | **MT** | Біблія в перекладі П. Куліша та І. Левицького (Відень 1903). |
-| **`fil`** | `FIL.bbl.mybible` | `uk` | 66 книг | **LXX** | Біблія в перекладі Патріарха Філарета (2004). |
-| **`gyz`** | `GYZ.bbl.mybible` | `uk` | 66 книг | **LXX** | Біблія, Новітній переклад Олександра Гижі (2006). |
-| **`ukder`** | `UKDER.bbl.mybible` | `uk` | 30 книг | **MT** | Велике Відкриття. Переклад Діани Деркач (1992). |
-| **`nup`** | `NUP.bbl.mybible` | `uk` | **27 книг (НЗ)** | **MT** | Новий Завіт у перекладі Юрія Попченка (2021). Висока точність до Textus Receptus. |
-| **`lcvu`** | `LCVU.bbl.mybible` | `uk` | 66 книг | **LXX** | Дослівно-Смисловий Переклад Біблії під ред. В. Журомського зі Стронгом. |
-| **`igrb`** | `IGRB.bbl.mybible` | `grc/uk` | 66 книг | **LXX** | Підрядкова грецько-українська Біблія з Дослівно-Смисловим Перекладом В. Журомського. |
-| **`rst`** | `RST.bbl.mybible` | `ru` | 66 книг | **LXX** | Русский Синодальный Перевод (РСТ). Традиційна східнослов'янська нумерація. |
-| **`rst-strong`** | `RST-STRONG.bbl.mybible` | `ru` | 66 книг | **LXX** | Русский Синодальный Перевод з вбудованими номерами Стронга. |
-| **`bti`** (аліас `kulakov`) | `BTI.bbl.mybible` | `ru` | 66 книг | **LXX** | **Библия в современном русском переводе под ред. М. П. и М. М. Кулаковых (BTI 2015)**. |
-| **`nrt`** | `NRT.bbl.mybible` | `ru` | 66 книг | **LXX** | Новый Русский Перевод (НРП / NRT, Biblica). |
-| **`ibs`** | `IBS.bbl.mybible` | `ru` | 66 книг | **MT** | Слово Жизни (IBS / Biblica). |
-| **`rbo`** | `RBO.bbl.mybible` | `ru` | 66 книг | **MT** | Библия в современном русском переводе (РБО 2011/2015). |
-| **`jnt`** | `JNT.bbl.mybible` | `ru` | **27 книг (НЗ)** | **MT** | Еврейский Новый Завет в переводе и комментариях Давида Стерна. |
-| **`desn`** | `DESN.bbl.mybible` | `ru` | 15 книг | **MT** | Библейские переводы Андрея Десницкого. |
-| **`tnhr`** | `TNHR.bbl.mybible` | `ru` | **39 книг (СЗ)** | **MT** | ТаНаХ на русском языке в переводе Давида Йосифона (1975). |
-| **`kassian`** | `KASSIAN.bbl.mybible` | `ru` | **27 книг (НЗ)** | **MT** | Новый Завет в переводе еп. Кассиана (Безобразова). |
-| **`ucs`** | `UCS.bbl.mybible` | `cu` | 66 книг | **MT** | Библия Церковнославянская (Елизаветинская). |
-| **`kjv`** | `KJV.bbl.mybible` | `en` | 66 книг | **MT** | King James Version (1611). Класичний англійський переклад. |
-| **`nkjv`** | `NKJV.bbl.mybible` | `en` | 66 книг | **MT** | New King James Version. Модернізована мова з класичною точністю. |
-| **`esv`** | `ESV.bbl.mybible` | `en` | 66 книг | **MT** | English Standard Version (2001/2016). Стандарт сучасної євангельської науки. |
-| **`nasb`** | `NASB.bbl.mybible` | `en` | 66 книг | **MT** | New American Standard Bible. Буквальний академічний переклад. |
-| **`niv`** | `NIV.bbl.mybible` | `en` | 66 книг | **MT** | New International Version. Найпопулярніший англійський динамічний переклад. |
-| **`lsb`**, **`net`**, **`csb17`** (`csb`), **`nlt`**, **`bsb`**, **`amp`**, **`ylt`**, **`gnv`**, **`rsv`**, **`asv`**, **`web`**, **`msg`**, **`ceb`**, **`isv`**, **`mev`**, **`cjb`**, **`tlv`**, **`ts2009`**, **`drb`**, **`nrsvce`**, **`njb1985`**, **`lbp`**, **`lsv`**, **`rsv2ce`**, **`nabre`**, **`cevd`**, **`gntd`**, **`erv`**, **`gnt`**, **`nlv`** | `*.bbl.mybible` | `en` | 66 книг | **MT** | Додаткові англійські переклади з `bolls.life` (Legacy Standard, NET, CSB 2017, NLT, Berean, Amplified, Young's Literal, Geneva 1599, RSV, ASV із Стронгом, WEB, The Message, CEB, ISV, MEV, Complete Jewish Bible, TLV, Douay-Rheims та ін.). |
-| **`lxxe`** | `LXXE.bbl.mybible` | `en` | **39 книг (СЗ)** | **LXX** | Brenton's English Septuagint (1851). |
-| **`spe`** | `SPE.bbl.mybible` | `en` | **5 книг (Тора)** | **MT** | Samaritan Pentateuch in English (2013). |
-| **`auv`**, **`wpnt`** | `AUV.bbl.mybible`, `WPNT.bbl.mybible` | `en` | **27 книг (НЗ)** | **MT** | An Understandable Version (1995) та Wilbur Pickering's New Testament. |
-| **`lxx`** | `LXX.bbl.mybible` | `el` | 66 книг | **MT** | Greek Bible (Septuagint LXX грецький Старий Завіт + Novum Testamentum Graece). |
-| **`na28`**, **`sblgnt`**, **`tr`**, **`tisch`**, **`ntgt`** | `*.bbl.mybible` | `el` | **27 книг (НЗ)** | **MT** | Грецький Новий Завіт: Nestle-Aland 28th Ed. (`na28`), SBLGNT (`sblgnt`), Textus Receptus 1624 (`tr`), Tischendorf 8th Ed. зі Стронгом (`tisch`) та без (`ntgt`). |
-| **`wlc`** | `WLC.bbl.mybible` | `he` | 66 книг | **MT** | Westminster Leningrad Codex (Давньоєврейський Танах + Єврейський НЗ). |
-| **`wlca`**, **`wlcc`**, **`hac`** | `WLCA.bbl.mybible`, `WLCC.bbl.mybible`, `HAC.bbl.mybible` | `he` | **39 книг (СЗ)** | **MT** | Давньоєврейський Танах: WLC з оголосовками, акцентами та Стронгом (`wlca`), консонантний WLC (`wlcc`), Алеппський кодекс (`hac`). |
-| **`dhnt`** | `DHNT.bbl.mybible` | `he` | **27 книг (НЗ)** | **MT** | Єврейський Новий Завіт Франца Деліча (1877/1998). |
-| **`vulg`** | `VULG.bbl.mybible` | `la` | 66 книг | **LXX** | Biblia Sacra juxta Vulgatam Clementinam (Латинська Вульгата). |
+| **`ubt`** (alias `tub`) | `UBT.bbl.mybible` | `uk` | 66 books | **LXX** | Ukrainian Bible by R. Turkoniak (UBT). Default translation. |
+| **`utt`** | `UTT.bbl.mybible` | `uk` | 65 books | **LXX** | Ukrainian Bible: R. Turkoniak 2011 (UTT). |
+| **`ubio`** | `UBIO.bbl.mybible` | `uk` | 66 books | **MT** | Bible in translation of Ivan Ohienko (1962). |
+| **`ubio88`** | `UBIO88.bbl.mybible` | `uk` | 66 books | **LXX** | Bible in translation of I. Ohienko (1988 edition, native SQLite3). |
+| **`cuv`** (aliases `cuv23`, `sup`) | `CUV.bbl.mybible` | `uk` | 66 books | **MT** | **Contemporary Ukrainian Translation UBT (CUV'23)** (2020–2023). |
+| **`npu`** | `NPU.bbl.mybible` | `uk` | **28 books (NT + Psalms)** | **LXX** | New Ukrainian Translation (NPU 2022, Biblica — NT & Psalms). |
+| **`umt`** | `UMT.bbl.mybible` | `uk` | 66 books | **MT** | Holy Bible: Contemporary Language (UMT 2007). |
+| **`hom`** | `HOM.bbl.mybible` | `uk` | 66 books | **MT** | Holy Scripture by Ivan Khomenko (1963, Rome edition). |
+| **`ukrk`** | `UKRK.bbl.mybible` | `uk` | 66 books | **MT** | Bible by P. Kulish & I. Puliui (1905). |
+| **`uk1903`** | `UK1903.bbl.mybible` | `uk` | 66 books | **MT** | Bible by P. Kulish & I. Levytskyi (Vienna 1903). |
+| **`fil`** | `FIL.bbl.mybible` | `uk` | 66 books | **LXX** | Bible by Patriarch Filaret (2004). |
+| **`gyz`** | `GYZ.bbl.mybible` | `uk` | 66 books | **LXX** | Bible, Modern Translation by Oleksandr Hyzha (2006). |
+| **`ukder`** | `UKDER.bbl.mybible` | `uk` | 30 books | **MT** | Velyke Vidkryttia by Diana Derkach (1992). |
+| **`nup`** | `NUP.bbl.mybible` | `uk` | **27 books (NT)** | **MT** | New Testament by Yurii Popchenko (2021, Textus Receptus). |
+| **`lcvu`** | `LCVU.bbl.mybible` | `uk` | 66 books | **LXX** | Literal-Meaning Translation by V. Zhuromskyi (with Strong's). |
+| **`igrb`** | `IGRB.bbl.mybible` | `grc/uk` | 66 books | **LXX** | Interlinear Greek-Ukrainian Bible by V. Zhuromskyi. |
+| **`rst`** | `RST.bbl.mybible` | `ru` | 66 books | **LXX** | Russian Synodal Translation (RST). |
+| **`rst-strong`** | `RST-STRONG.bbl.mybible` | `ru` | 66 books | **LXX** | Russian Synodal Translation with embedded Strong's numbers. |
+| **`bti`** (alias `kulakov`) | `BTI.bbl.mybible` | `ru` | 66 books | **LXX** | **Contemporary Russian Translation ed. M. P. & M. M. Kulakov (BTI 2015)**. |
+| **`nrt`** | `NRT.bbl.mybible` | `ru` | 66 books | **LXX** | New Russian Translation (NRT, Biblica). |
+| **`ibs`** | `IBS.bbl.mybible` | `ru` | 66 books | **MT** | Slovo Zhizni (IBS / Biblica). |
+| **`rbo`** | `RBO.bbl.mybible` | `ru` | 66 books | **MT** | Contemporary Russian Translation (RBO 2011/2015). |
+| **`jnt`** | `JNT.bbl.mybible` | `ru` | **27 books (NT)** | **MT** | Complete Jewish New Testament by David Stern. |
+| **`desn`** | `DESN.bbl.mybible` | `ru` | 15 books | **MT** | Biblical Translations by Andrey Desnitsky. |
+| **`tnhr`** | `TNHR.bbl.mybible` | `ru` | **39 books (OT)** | **MT** | TaNaKh in Russian by David Yosifon (1975). |
+| **`kassian`** | `KASSIAN.bbl.mybible` | `ru` | **27 books (NT)** | **MT** | New Testament by Bishop Kassian (Bezobrazov). |
+| **`ucs`** | `UCS.bbl.mybible` | `cu` | 66 books | **MT** | Church Slavonic Bible (Elizabethan). |
+| **`kjv`** | `KJV.bbl.mybible` | `en` | 66 books | **MT** | King James Version (1611). |
+| **`nkjv`** | `NKJV.bbl.mybible` | `en` | 66 books | **MT** | New King James Version. |
+| **`esv`** | `ESV.bbl.mybible` | `en` | 66 books | **MT** | English Standard Version (2001/2016). |
+| **`nasb`** | `NASB.bbl.mybible` | `en` | 66 books | **MT** | New American Standard Bible. |
+| **`niv`** | `NIV.bbl.mybible` | `en` | 66 books | **MT** | New International Version. |
+| **`lsb`**, **`net`**, **`csb17`** (`csb`), **`nlt`**, **`bsb`**, **`amp`**, **`ylt`**, **`gnv`**, **`rsv`**, **`asv`**, **`web`**, **`msg`**, **`ceb`**, **`isv`**, **`mev`**, **`cjb`**, **`tlv`**, **`ts2009`**, **`drb`**, **`nrsvce`**, **`njb1985`**, **`lbp`**, **`lsv`**, **`rsv2ce`**, **`nabre`**, **`cevd`**, **`gntd`**, **`erv`**, **`gnt`**, **`nlv`** | `*.bbl.mybible` | `en` | 66 books | **MT** | Additional English translations from `bolls.life` (Legacy Standard, NET, CSB 2017, NLT, Berean, Amplified, Young's Literal, Geneva 1599, RSV, ASV w/ Strong's, WEB, The Message, CEB, ISV, MEV, Complete Jewish Bible, TLV, Douay-Rheims, etc.). |
+| **`lxxe`** | `LXXE.bbl.mybible` | `en` | **39 books (OT)** | **LXX** | Brenton's English Septuagint (1851). |
+| **`spe`** | `SPE.bbl.mybible` | `en` | **5 books (Torah)** | **MT** | Samaritan Pentateuch in English (2013). |
+| **`auv`**, **`wpnt`** | `AUV.bbl.mybible`, `WPNT.bbl.mybible` | `en` | **27 books (NT)** | **MT** | An Understandable Version (1995) & Wilbur Pickering's New Testament. |
+| **`lxx`** | `LXX.bbl.mybible` | `el` | 66 books | **MT** | Greek Bible (Septuagint LXX + Greek NT). |
+| **`na28`**, **`sblgnt`**, **`tr`**, **`tisch`**, **`ntgt`** | `*.bbl.mybible` | `el` | **27 books (NT)** | **MT** | Greek New Testament: Nestle-Aland 28th Ed. (`na28`), SBLGNT (`sblgnt`), Textus Receptus 1624 (`tr`), Tischendorf 8th Ed. w/ Strong's (`tisch`) and without (`ntgt`). |
+| **`wlc`** | `WLC.bbl.mybible` | `he` | 66 books | **MT** | Westminster Leningrad Codex (Hebrew OT + Hebrew NT). |
+| **`wlca`**, **`wlcc`**, **`hac`** | `WLCA.bbl.mybible`, `WLCC.bbl.mybible`, `HAC.bbl.mybible` | `he` | **39 books (OT)** | **MT** | Hebrew OT: WLC with vowels, accents & Strong's (`wlca`), consonantal WLC (`wlcc`), Aleppo Codex (`hac`). |
+| **`dhnt`** | `DHNT.bbl.mybible` | `he` | **27 books (NT)** | **MT** | Delitzsch's Hebrew New Testament (1877/1998). |
+| **`vulg`** | `VULG.bbl.mybible` | `la` | 66 books | **LXX** | Biblia Sacra juxta Vulgatam Clementinam (Latin Vulgate). |
 
-### 3.2. Коментарі (`.cmt.mybible` — 14 модулів)
+### 3.2. Commentaries (`.cmt.mybible` — 14 Modules)
 
-| ID модуля | Файл у `modules/` | Мова | Охоплення | Повна назва та богословська традиція |
+| Module ID | File in `modules/` | Lang | Coverage | Description & Tradition |
 | :--- | :--- | :---: | :---: | :--- |
-| **`ngsb`** | `NGSB.cmt.mybible` | `ru` | Вся Біблія | **Нова Женевська навчальна Біблія** (*New Geneva Study Bible*, Р. Ч. Спраул). Класичний реформатський коментар (пріоритет за замовчуванням). |
-| **`calvin`** | `CALVIN.cmt.mybible` | `ru` | Новий Завіт | **Жан Кальвін:** Тлумачення книг Нового Завіту. Класична реформатська екзегетика. |
-| **`henry`** | `HENRY.cmt.mybible` | `ru` | Вся Біблія | **Меттью Генрі:** Повний тлумачний коментар на всю Біблію (6 томів, пуританська класика). |
-| **`dauma`** | `DAUMA.cmt.mybible` | `ru` | Старий Завіт | **Йохем Даума:** «Дорогами Старого Завіту» (реформатський огляд та екзегетика СЗ). |
-| **`mcarthur`** | `MCARTHUR.cmt.mybible` | `ru` | Вся Біблія | **Джон МакАртур:** Тлумачення книг Біблії (*MacArthur Study Bible* / NT Commentaries). |
-| **`macdonald`** | `MACDONALD.cmt.mybible` | `ru` | Вся Біблія | **Вільям МакДональд:** Біблійні коментарі для віруючих (*Believer's Bible Commentary*). |
-| **`spurgeon`** | `SPURGEON.cmt.mybible` | `ru` | Псалми | **Чарльз Сперджен:** «Скарбниця Давида» (*The Treasury of David*, російський переклад). |
-| **`spurgeon-en`** | `SPURGEON-EN.cmt.mybible` | `en` | Псалми (150) | **Charles Spurgeon:** *The Treasury of David* (повне 7-томне англійське видання на всі 150 Псалмів). |
-| **`lopukhin`** | `LOPUKHIN.cmt.mybible` | `ru` | Вся Біблія | **Тлумачна Біблія О. П. Лопухіна** (повний 11-томний історико-археологічний та текстологічний коментар). |
-| **`barclay`** | `BARCLAY.cmt.mybible` | `ru` | Новий Завіт | **Вільям Барклі:** Коментарі до Нового Завіту (культурно-історичний та лексичний розбір). |
-| **`nrt-notes`** | `NRT-NOTES.cmt.mybible` | `ru` | Вся Біблія | **Примітки та богословські коментарі до НРП (NRT / Biblica)**. |
-| **`hertz`** | `HERTZ.cmt.mybible` | `ru` | Тора (5 книг) | **Йосиф Герц:** Коментар на П'ятикнижжя з класичною єврейською екзегетикою. |
-| **`tsk`** | `TSK.cmt.mybible` | `en` | Вся Біблія | **Treasury of Scripture Knowledge (TSK):** База перехресних та паралельних місць Писання. |
-| **`sample`** | `sample.cmt.mybible` | `uk` | Демо | Зразковий український богословський коментар до ключових уривків. |
+| **`ngsb`** | `NGSB.cmt.mybible` | `ru` | Whole Bible | **New Geneva Study Bible** (ed. R. C. Sproul). Classic Reformed study notes (default commentary). |
+| **`calvin`** | `CALVIN.cmt.mybible` | `ru` | New Testament | **John Calvin:** Commentaries on the New Testament. Classic Reformed exegesis. |
+| **`henry`** | `HENRY.cmt.mybible` | `ru` | Whole Bible | **Matthew Henry:** Complete Commentary on the Whole Bible (6 vols, Puritan classic). |
+| **`dauma`** | `DAUMA.cmt.mybible` | `ru` | Old Testament | **Jochem Douma:** Old Testament Survey & Reformed Exegesis. |
+| **`mcarthur`** | `MCARTHUR.cmt.mybible` | `ru` | Whole Bible | **John MacArthur:** MacArthur Study Bible / NT Commentaries. |
+| **`macdonald`** | `MACDONALD.cmt.mybible` | `ru` | Whole Bible | **William MacDonald:** Believer's Bible Commentary. |
+| **`spurgeon`** | `SPURGEON.cmt.mybible` | `ru` | Psalms | **Charles Spurgeon:** *The Treasury of David* (Russian translation). |
+| **`spurgeon-en`** | `SPURGEON-EN.cmt.mybible` | `en` | Psalms (150) | **Charles Spurgeon:** *The Treasury of David* (complete 7-volume English edition on all 150 Psalms). |
+| **`lopukhin`** | `LOPUKHIN.cmt.mybible` | `ru` | Whole Bible | **A. P. Lopukhin Explanatory Bible** (11-volume historical & textual commentary). |
+| **`barclay`** | `BARCLAY.cmt.mybible` | `ru` | New Testament | **William Barclay:** Daily Study Bible (historical-cultural & lexical notes). |
+| **`nrt-notes`** | `NRT-NOTES.cmt.mybible` | `ru` | Whole Bible | **New Russian Translation (NRT / Biblica) Study Notes**. |
+| **`hertz`** | `HERTZ.cmt.mybible` | `ru` | Torah (5 books) | **J. H. Hertz:** Commentary on the Pentateuch. |
+| **`tsk`** | `TSK.cmt.mybible` | `en` | Whole Bible | **Treasury of Scripture Knowledge (TSK):** Cross-reference & parallel passage database. |
+| **`sample`** | `sample.cmt.mybible` | `uk` | Demo | Sample Ukrainian theological commentary for key passages. |
 
-### 3.3. Словники та Лексикони (`.dct.mybible` — 8 модулів)
+### 3.3. Dictionaries & Lexicons (`.dct.mybible` — 8 Modules)
 
-| ID модуля | Файл у `modules/` | Мова | Статей | Повна назва та призначення |
+| Module ID | File in `modules/` | Lang | Entries | Description |
 | :--- | :--- | :---: | :---: | :--- |
-| **`strong`** | `STRONG.dct.mybible` | `el/he/en` | 14 298 | **Повний івритський та грецький лексикон Стронга** (`H1..H8674`, `G1..G5624`, пошук за кодом або лемою). |
-| **`ngsb-dict`** | `NGSB-DICT.dct.mybible` | `ru` | ~150 | **Богословські статті та словник Нової Женевської Біблії** (доктринальні нариси реформатського богослов'я). |
-| **`elwell`** | `ELWELL.dct.mybible` | `ru` | ~6 100 | **Великий біблійний та теологічний словник Волтера Елвелла** (*Baker / Evangelical Dictionary*). |
-| **`nbd`** | `NBD.dct.mybible` | `ru` | ~2 100 | **Новий Біблійний Словник (IVP / New Bible Dictionary)** (Мартін, Роуд, Гатрі). |
-| **`brockhaus`** | `BROCKHAUS.dct.mybible` | `ru` | ~6 400 | **Біблійна енциклопедія Брокгауза** (Фріц Рінекер, Герхард Майєр). |
-| **`nikifor`** | `NIKIFOR.dct.mybible` | `ru` | ~7 500 | **Ілюстрована біблійна енциклопедія архім. Никифора**. |
-| **`men`** | `MEN.dct.mybible` | `ru` | ~2 900 | **Бібліологічний словник о. Олександра Меня**. |
-| **`sample`** | `sample.dct.mybible` | `uk` | Демо | Зразковий український богословський словник. |
+| **`strong`** | `STRONG.dct.mybible` | `el/he/en` | 14,298 | **Complete Hebrew & Greek Strong's Lexicon** (`H1..H8674`, `G1..G5624`, lookup by code or lemma). |
+| **`ngsb-dict`** | `NGSB-DICT.dct.mybible` | `ru` | ~150 | **New Geneva Study Bible Theological Articles & Dictionary**. |
+| **`elwell`** | `ELWELL.dct.mybible` | `ru` | ~6,100 | **Evangelical Dictionary of Theology** (Walter Elwell / Baker). |
+| **`nbd`** | `NBD.dct.mybible` | `ru` | ~2,100 | **New Bible Dictionary** (IVP — Martin, Marshall, Millard, Packer, Wiseman). |
+| **`brockhaus`** | `BROCKHAUS.dct.mybible` | `ru` | ~6,400 | **Brockhaus Bible Encyclopedia** (Fritz Rienecker, Gerhard Maier). |
+| **`nikifor`** | `NIKIFOR.dct.mybible` | `ru` | ~7,500 | **Illustrated Bible Encyclopedia** by Archimandrite Nikifor. |
+| **`men`** | `MEN.dct.mybible` | `ru` | ~2,900 | **Bibliological Dictionary** by Fr. Alexander Men. |
+| **`sample`** | `sample.dct.mybible` | `uk` | Demo | Sample Ukrainian theological dictionary. |
 
 > [!IMPORTANT]
-> **Увага до охоплення книг:** Модулі **`nup`** та **`kassian`** містять **тільки Новий Завіт (27 книг: Мт – Об)**, а модуль **`npu`** містить **28 книг (Псалми + 27 книг Нового Завіту)**. Якщо запитати книгу, якої немає у модулі, CLI автоматично виведе точну підказку (`missingBookHint`) про книжковий склад цього модуля. Для повного Старого Завіту українською мовою використовуйте `ubt`, `ubio`, `ubio88`, `hom`, `umt`, `ukrk`, `uk1903`, `fil`, `gyz`, `lcvu` або `igrb`.
+> **Book Coverage Note:** Partial modules (such as **`nup`**, **`kassian`**, **`jnt`**, **`na28`**, **`sblgnt`**, **`tr`** with 27 NT books, **`npu`** with 28 books [Psalms + NT], or **`tnhr`**, **`lxxe`**, **`wlca`**, **`hac`** with 39 OT books) will automatically trigger a precise `missingBookHint` in the CLI when querying a book they do not contain.
 
-### Пріоритет пошуку модулів (`ModuleRegistry`)
-Система шукає файли баз даних у наступному порядку:
-1. Каталоги з конструктора або змінної середовища `MYBIBLE_DIR` (розділені `:`).
-2. Локальна папка `./modules` у поточному робочому каталозі (`process.cwd()`).
-3. Каталог `modules/` всередині пакета встановленого модуля (`import.meta.url`).
-4. Глобальні директорії користувача: `~/.local/share/mybible/modules` та `~/.config/mybible/modules`.
+### Module Discovery Priority (`ModuleRegistry`)
+The registry searches for database files in the following order:
+1. Custom directories passed to the constructor or via the `MYBIBLE_DIR` environment variable (colon-separated `:`).
+2. `./modules` in the current working directory (`process.cwd()`).
+3. `modules/` inside the installed package directory (`import.meta.url`).
+4. Global user directories: `~/.local/share/mybible/modules` and `~/.config/mybible/modules`.
 
 ---
 
-## 4. Критичні правила нумерації Псалмів (LXX vs MT Versification Contract)
+## 4. Psalms Versification Contract (LXX vs MT)
 
-### 4.1. Чому виникає різниця?
-У давньоєврейському тексті (Масоретський текст, **MT**) та давньогрецькому перекладі 70 тлумачів (Септуагінта, **LXX**) Псалтир ділиться на 150 псалмів різними способами через об'єднання або розділення окремих псалмів.
-- Септуагінта (і східні переклади: УБТ, РСТ, Філарет) об'єднує масоретські Псалми 9 і 10 в один акростиховий Псалом 9.
-- Внаслідок цього номери більшості псалмів у Септуагінті відстають на 1: **MT = LXX + 1** (наприклад, знаменитий пастирський псалом «Господь — мій Пастир» у Септуагінті — це **Псалом 22**, а в Масоретському тексті — **Psalm 23**).
-- Ближче до кінця книги Псалми знову розбиваються і об'єднуються у главах 113–116 та 146–147, вирівнюючись на Псалмах 148–150.
+### 4.1. Why Does the Difference Exist?
+The Hebrew Masoretic Text (**MT**) and the Greek Septuagint (**LXX**) divide the 150 Psalms differently by combining or splitting specific psalms:
+- The Septuagint (and Eastern translations: UBT, RST, Filaret, NPU, BTI) merges Masoretic Psalms 9 and 10 into a single acrostic Psalm 9.
+- Consequently, most Psalm numbers in the Septuagint trail by 1: **MT = LXX + 1** (e.g., *"The LORD is my Shepherd"* is **Psalm 22** in LXX and **Psalm 23** in MT).
+- Near the end of the Psalter, Psalms 113–116 and 146–147 split and merge again, realigning at Psalms 148–150.
 
-### 4.2. Алгоритм Автоматичного Визначення Традиції (Heuristics)
-1. **Традиція запиту (`inputTraditionHint`):**
-   - Якщо назва книги введена **кирилицею** (`Пс`, `Псалом`, `Псалтир`) — рушій вважає запит традицією **LXX**.
-   - Якщо назва книги введена **латиницею** (`Ps`, `Psalm`, `Psalms`) — рушій вважає запит традицією **MT**.
-2. **Традиція модуля (`ModuleMetadata.tradition`):**
-   - Движок автоматично виконує SQL-інспекцію модуля:
+### 4.2. Automatic Tradition Detection Heuristics
+1. **Query Tradition Hint (`inputTraditionHint`):**
+   - Cyrillic book names (`Пс`, `Псалом`, `Псалтир`) default to **`LXX`**.
+   - Latin book names (`Ps`, `Psalm`, `Psalms`) default to **`MT`**.
+2. **Module Tradition Inspection (`ModuleMetadata.tradition`):**
+   - The engine runs an automatic SQL inspection on the module:
      ```sql
      SELECT COUNT(*) as cnt FROM verses WHERE book_number = 190 AND chapter = 9;
      ```
-   - Якщо в 9-му розділі $\ge 25$ віршів (зазвичай 39) — це **LXX** (оскільки Пс 9 і 10 об'єднані).
-   - Якщо віршів $< 25$ (зазвичай 21) — це **MT**.
-3. **Автоматична крос-трансляція:**
-   - Коли користувач робить запит `mybible get "Пс 22:1-6" --trans esv`, де запит у `LXX`, а модуль у `MT`, рушій автоматично транслює його в `Ps 23:1-6`, повертає правильні вірші та у вихідних даних зазначає `mappedFrom`.
+   - If Chapter 9 has $\ge 25$ verses (typically 39) → **`LXX`** (Psalms 9 & 10 merged).
+   - If Chapter 9 has $< 25$ verses (typically 21) → **`MT`**.
+3. **Automatic Cross-Translation:**
+   - When querying `mybible get "Пс 22:1-6" --trans esv` (LXX query against an MT module), the engine automatically translates it to `Ps 23:1-6`, fetches the matching verses, and records `mappedFrom` in the metadata.
 
-### 4.3. Повна Матриця Відповідності (Versification Mapping Table)
+### 4.3. Complete Versification Mapping Matrix
 
-| LXX (Септуагінта / УБТ / РСТ) | MT (Масоретська / KJV / ESV / НПУ / UBIO) | Зсув та Примітки |
+| LXX (Septuagint / UBT / RST / NPU / BTI) | MT (Masoretic / KJV / ESV / CUV / UBIO) | Offset & Notes |
 | :--- | :--- | :--- |
-| **Пс 1–8** | **Ps 1–8** | **Ідентичні (1:1)** |
-| **Пс 9:1–21** | **Ps 9:1–21** | Перша частина акростиха збігається вірш-у-вірш |
-| **Пс 9:22–39** | **Ps 10:1–18** | Друга частина виокремлена в MT у самостійний розділ: **`MT_verse = LXX_verse - 21`** |
-| **Пс 10–112** | **Ps 11–113** | **Зсув розділу на +1 у MT (`MT = LXX + 1`)**. Вірші збігаються 1:1. |
-| **Пс 113:1–8** | **Ps 114:1–8** | Перша частина LXX Пс 113 становить MT Ps 114 |
-| **Пс 113:9–26** | **Ps 115:1–18** | Друга частина LXX Пс 113 становить MT Ps 115: **`MT_verse = LXX_verse - 8`** |
-| **Пс 114:1–9** | **Ps 116:1–9** | LXX Пс 114 становить першу частину MT Ps 116 |
-| **Пс 115:1–10** | **Ps 116:10–19** | LXX Пс 115 становить другу частину MT Ps 116: **`MT_verse = LXX_verse + 9`** |
-| **Пс 116–145** | **Ps 117–146** | **Зсув розділу на +1 у MT (`MT = LXX + 1`)**. Вірші збігаються 1:1. |
-| **Пс 146:1–11** | **Ps 147:1–11** | LXX Пс 146 становить першу частину MT Ps 147 |
-| **Пс 147:1–9** | **Ps 147:12–20** | LXX Пс 147 становить другу частину MT Ps 147: **`MT_verse = LXX_verse + 11`** |
-| **Пс 148–150** | **Ps 148–150** | **Ідентичні (1:1)** |
-| *(Пс 151)* | *(неканонічний)* | Додатковий псалом Септуагінти (присутній лише в деяких LXX модулях) |
+| **Ps 1–8** | **Ps 1–8** | **Identical (1:1)** |
+| **Ps 9:1–21** | **Ps 9:1–21** | First half of the acrostic matches verse-for-verse |
+| **Ps 9:22–39** | **Ps 10:1–18** | Second half forms MT Ps 10: **`MT_verse = LXX_verse - 21`** |
+| **Ps 10–112** | **Ps 11–113** | **Chapter shift +1 in MT (`MT = LXX + 1`)**. Verses match 1:1. |
+| **Ps 113:1–8** | **Ps 114:1–8** | First part of LXX Ps 113 = MT Ps 114 |
+| **Ps 113:9–26** | **Ps 115:1–18** | Second part of LXX Ps 113 = MT Ps 115: **`MT_verse = LXX_verse - 8`** |
+| **Ps 114:1–9** | **Ps 116:1–9** | LXX Ps 114 = first part of MT Ps 116 |
+| **Ps 115:1–10** | **Ps 116:10–19** | LXX Ps 115 = second part of MT Ps 116: **`MT_verse = LXX_verse + 9`** |
+| **Ps 116–145** | **Ps 117–146** | **Chapter shift +1 in MT (`MT = LXX + 1`)**. Verses match 1:1. |
+| **Ps 146:1–11** | **Ps 147:1–11** | LXX Ps 146 = first part of MT Ps 147 |
+| **Ps 147:1–9** | **Ps 147:12–20** | LXX Ps 147 = second part of MT Ps 147: **`MT_verse = LXX_verse + 11`** |
+| **Ps 148–150** | **Ps 148–150** | **Identical (1:1)** |
+| *(Ps 151)* | *(non-canonical)* | Additional Septuagint psalm (present only in select LXX modules) |
 
-### 4.4. Автоматичне Розбиття Діапазонів (Segment Splitting)
-Якщо запитаний діапазон перетинає точку з'єднання псалмів, рушій **автоматично розбиває його на кілька окремих підзапитів**:
-- Запит: `mybible get "Пс 9:15-25" --trans kjv`
-- Трансляція:
-  1. `LXX Пс 9:15–21` $\rightarrow$ `MT Ps 9:15–21`
-  2. `LXX Пс 9:22–25` $\rightarrow$ `MT Ps 10:1–4`
-- Користувач отримує повний об'єднаний уривок без дірок у тексті.
+### 4.4. Automatic Segment Splitting
+If a requested range crosses a Psalm split boundary, the engine **automatically splits it into multiple sub-queries**:
+- Query: `mybible get "Пс 9:15-25" --trans kjv`
+- Translation:
+  1. `LXX Ps 9:15–21` $\rightarrow$ `MT Ps 9:15–21`
+  2. `LXX Ps 9:22–25` $\rightarrow$ `MT Ps 10:1–4`
+- The user receives one seamless, contiguous passage with zero missing verses.
 
 ---
 
-## 5. Архітектура проєкту для розробки та розширення (Codebase Map)
+## 5. Codebase Architecture & Extension Map
 
 ```
 MyBibleCli/
 ├── bin/
-│   └── mybible.js            # Виконуваний бінарник CLI для Node.js (# !/usr/bin/env node)
+│   └── mybible.js            # Executable CLI entrypoint for Node.js
 ├── src/
-│   ├── index.ts              # Головна точка входу для Node.js (експортує MyBibleService, driver, registry)
-│   ├── cli.ts                # Реалізація командного інтерфейсу на Commander.js
-│   ├── types.ts              # Усі TypeScript інтерфейси та типи даних
+│   ├── index.ts              # Node.js entrypoint (exports MyBibleService, driver, registry)
+│   ├── cli.ts                # Commander.js CLI definitions
+│   ├── types.ts              # Shared TypeScript interfaces and types
 │   │
-│   ├── core/                 # ІЗОМОРФНЕ ЯДРО (Zero Node.js OS/FS dependencies)
+│   ├── core/                 # ISOMORPHIC CORE (Zero Node.js OS/FS dependencies)
 │   │   ├── engine.ts         # IsomorphicBibleModule, MyBibleCoreEngine
-│   │   └── index.ts          # Експорт ізоморфних компонентів для Web/Edge
+│   │   └── index.ts          # Browser/Edge-safe exports
 │   │
-│   ├── db/                   # Рівень зберігання даних SQLite
-│   │   └── sqlite-adapter.ts # NodeSqliteStorageDriver (node:sqlite) та MyBibleDatabase
+│   ├── db/                   # SQLite storage layer
+│   │   └── sqlite-adapter.ts # NodeSqliteStorageDriver (node:sqlite) & MyBibleDatabase
 │   │
-│   ├── config/               # Реєстрація та завантаження модулів
-│   │   ├── registry.ts       # ModuleRegistry: пошук модулів, визначення типів, резолвінг аліасів
-│   │   └── downloader.ts     # Beblia XML парсер/компілятор, Extra Registry клієнт, чистий ZIP розпаковщик
+│   ├── config/               # Module discovery & multi-source compilers
+│   │   ├── registry.ts       # ModuleRegistry: discovery, type detection, alias resolution
+│   │   └── downloader.ts     # Compilers for Beblia XML, Bolls JSON, eBible VPL, BibleQuote, Strong's, Spurgeon, TSK, Extra Registry, pure-JS ZIP
 │   │
-│   ├── parser/               # Парсинг біблійного тексту
-│   │   ├── book-names.ts     # Таблиця 66 канонічних книг, назви UA/RU/EN, MyBible номери (10..730)
-│   │   └── reference-parser.ts # Розумний парсер посилань ("Пс 9:10-15", "Ів 3:16", "1Кор 13")
+│   ├── parser/               # Scripture reference parsing
+│   │   ├── book-names.ts     # 66 canonical books, UA/RU/EN aliases, MyBible numbers (10..730)
+│   │   └── reference-parser.ts # Reference parser ("Пс 9:10-15", "Jn 3:16", "1Cor 13")
 │   │
-│   ├── versification/        # Рушій канонічного мапінгу
-│   │   └── psalms-mapper.ts  # LXX <-> MT розрахунок, зміщення віршів, розбиття діапазонів
+│   ├── versification/        # Canonical mapping engine
+│   │   └── psalms-mapper.ts  # LXX <-> MT calculations, verse offsets, segment splitting
 │   │
-│   ├── formatters/           # Форматування відповідей
-│   │   └── output.ts         # Генератори pretty, Markdown, raw text, JSON
+│   ├── formatters/           # Output formatters
+│   │   └── output.ts         # pretty, Markdown, raw text, JSON formatters
 │   │
-│   ├── utils/                # Допоміжні утиліти
-│   │   └── text-cleaner.ts   # Очищення тегів Strong (<S>), виносок (<n>), курсиву (<i>), слів Христа (<J>)
+│   ├── utils/                # Helpers
+│   │   └── text-cleaner.ts   # Cleans Strong's (<S>), notes (<n>), italics (<i>), Words of Christ (<J>)
 │   │
-│   └── server/               # Вбудований мікросервер
-│       └── api-server.ts     # REST HTTP сервер на нативному node:http (CORS enabled)
+│   └── server/               # Built-in microservice
+│       └── api-server.ts     # REST HTTP server via native node:http (CORS enabled)
 │
-├── modules/                  # Каталог локально збережених SQLite баз (.bbl/.cmt/.dct.mybible)
-├── tests/                    # Комплексні тести (node:test)
-│   ├── cli-service.test.ts
+├── modules/                  # Local SQLite databases (.bbl/.cmt/.dct.mybible)
+├── tests/                    # Unit & integration tests (node:test)
+│   ├── cli-and-service.test.ts
+│   ├── downloader.test.ts
 │   ├── psalms-mapper.test.ts
 │   ├── reference-parser.test.ts
+│   ├── sqlite-adapter.test.ts
 │   └── text-cleaner.test.ts
 └── package.json
 ```
 
-### Команди збірки та тестування
+### Build & Test Commands
 ```bash
-# Збірка TypeScript у dist/
+# Compile TypeScript to dist/
 npm run build
 
-# Запуск тестів (всі 37 тестів повинні проходити без помилок)
+# Run the test suite (all 46 tests must pass)
 npm test
 
-# Запуск у режимі розробки без попередньої компіляції (tsx)
+# Run in dev mode without pre-compilation (tsx)
 npm run dev -- get "Пс 22:1-6"
 ```
 
 ---
 
-## 6. Специфікація Вбудованого HTTP REST API
+## 6. Built-in HTTP REST API Specification
 
-Сервер запускається командою `mybible serve --port 3333` і надає миттєвий доступ до всіх можливостей рушія по HTTP. Дозволяє повну крос-доменну інтеграцію (CORS `*`).
+Start the server with `mybible serve --port 3333` for instant HTTP access with CORS (`*`) enabled.
 
-### Перелік ендпоінтів
+### Endpoints
 
-| Метод | Ендпоінт | Опис | Приклад параметрів |
+| Method | Endpoint | Description | Example Query Params |
 | :---: | :--- | :--- | :--- |
-| `GET` | `/api/health` | Перевірка працездатності сервера | — |
-| `GET` | `/api/modules` | Список встановлених модулів | `?type=bible` (або `commentary`, `dictionary`) |
-| `GET` | `/api/books` | Список книг модуля | `?trans=ubt` |
-| `GET` | `/api/chapters` | Список розділів книги та кількість віршів | `?book=Пс&trans=ubt` |
-| `GET` | `/api/passage` | Отримання уривка з мапінгом | `?q=Пс+22:1-6&trans=esv&format=md&info=true` |
-| `GET` | `/api/compare` | Порівняння перекладів | `?q=Пс+9:22-25&trans=ubt,rst,kjv&format=json&verseByVerse=true` |
-| `GET` | `/api/search` | Повнотекстовий пошук | `?q=Благодать&trans=ubt&limit=20&testament=all` |
-| `GET` | `/api/commentaries` | Коментар до уривка | `?q=Пс+22:1-6&mod=sample&format=md` |
-| `GET` | `/api/dictionary` | Словникова стаття | `?q=Благодать&mod=sample&format=json` |
+| `GET` | `/api/health` | Server health check | — |
+| `GET` | `/api/modules` | List installed modules | `?type=bible` (or `commentary`, `dictionary`) |
+| `GET` | `/api/books` | List books in a module | `?trans=ubt` |
+| `GET` | `/api/chapters` | List chapters and verse counts for a book | `?book=Пс&trans=ubt` |
+| `GET` | `/api/passage` | Fetch a passage with LXX/MT mapping | `?q=Пс+22:1-6&trans=esv&format=md&info=true` |
+| `GET` | `/api/compare` | Compare multiple translations | `?q=Пс+9:22-25&trans=ubt,cuv,kjv&format=json&verseByVerse=true` |
+| `GET` | `/api/search` | Full-text search | `?q=grace&trans=esv&limit=20&testament=all` |
+| `GET` | `/api/commentaries` | Fetch commentary for a passage | `?q=Rom+8:28&mod=calvin&format=md` |
+| `GET` | `/api/dictionary` | Look up a dictionary entry | `?q=G25&mod=strong&format=json` |
 
-### Приклади запитів через `curl`
+### `curl` Examples
 
 ```bash
-# 1. Отримати уривок у форматі Markdown
-curl "http://127.0.0.1:3333/api/passage?q=Пс+22:1-6&trans=esv&format=md"
+# 1. Fetch a passage in Markdown
+curl "http://127.0.0.1:3333/api/passage?q=Ps+23:1-6&trans=esv&format=md"
 
-# 2. Порівняти переклади у форматі JSON
-curl "http://127.0.0.1:3333/api/compare?q=Ів+14:6&trans=ubt,ubio,npu,esv"
+# 2. Compare translations in JSON
+curl "http://127.0.0.1:3333/api/compare?q=Jn+14:6&trans=ubt,cuv,npu,esv"
 
-# 3. Знайти слово в Новому Завіті
-curl "http://127.0.0.1:3333/api/search?q=Любов&trans=ubt&testament=nt&limit=5"
+# 3. Search in the New Testament
+curl "http://127.0.0.1:3333/api/search?q=grace&trans=esv&testament=nt&limit=5"
 
-# 4. Прочитати статтю зі словника
-curl "http://127.0.0.1:3333/api/dictionary?q=Благодать"
+# 4. Look up a Strong's lexicon entry
+curl "http://127.0.0.1:3333/api/dictionary?q=G25&mod=strong"
 ```
 
 ---
 
-## 7. Програмна Інтеграція в Код (TypeScript/Node.js)
+## 7. Programmatic Usage (TypeScript / Node.js)
 
 ```typescript
 import {
   MyBibleService,
-  parseReference,
-  convertPsalmReference,
   formatPassageResult,
   formatComparisonResults,
 } from 'mybible-cli';
 
-// 1. Ініціалізація сервісу
+// 1. Initialize service
 const service = new MyBibleService();
 
-// 2. Отримання уривка з авто-мапінгом LXX ↔ MT
+// 2. Fetch passage with automatic LXX ↔ MT mapping
 const passageResult = service.getPassage('Пс 22:1-6', {
   trans: 'esv',
   info: true,
@@ -405,18 +406,17 @@ const passageResult = service.getPassage('Пс 22:1-6', {
 });
 console.log(formatPassageResult(passageResult, { format: 'md', info: true }));
 
-// 3. Порівняння перекладів
+// 3. Compare translations
 const comparison = service.comparePassage('Пс 9:22-25', {
-  translations: ['ubt', 'rst', 'ubio', 'npu', 'kjv', 'esv'],
+  translations: ['ubt', 'cuv', 'bti', 'npu', 'kjv', 'esv'],
   format: 'md',
 });
 console.log(formatComparisonResults(comparison, { format: 'md', verseByVerse: true }));
 
-// 4. Повнотекстовий пошук
-const searchResult = service.search('Благодать', {
-  trans: 'ubt',
+// 4. Full-text search
+const searchResult = service.search('grace', {
+  trans: 'esv',
   limit: 10,
   testament: 'nt',
 });
-console.log(`Знайдено: ${searchResult.totalMatches} віршів.`);
 ```
