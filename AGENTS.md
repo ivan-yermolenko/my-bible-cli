@@ -141,11 +141,11 @@ mybible serve --port 3333 --host 127.0.0.1
 
 ---
 
-## 3. Повний реєстр локально встановлених модулів (`modules/` — 52 модулі)
+## 3. Повний реєстр локально встановлених модулів (`modules/` — 100 модулів)
 
-У репозиторії попередньо сконфігуровано та підтримується **52 модулі** (**30 перекладів Біблії**, **14 коментарів** та **8 словників/лексиконів**):
+У репозиторії попередньо сконфігуровано та підтримується **100 модулів** (**78 перекладів Біблії**, **14 коментарів** та **8 словників/лексиконів**):
 
-### 3.1. Переклади Біблії (`.bbl.mybible` — 30 модулів)
+### 3.1. Переклади Біблії (`.bbl.mybible` — 78 модулів)
 
 | ID модуля | Файл у `modules/` | Мова | Охоплення | Традиція Псалмів | Повна назва та характеристика |
 | :--- | :--- | :---: | :---: | :---: | :--- |
@@ -161,6 +161,7 @@ mybible serve --port 3333 --host 127.0.0.1
 | **`uk1903`** | `UK1903.bbl.mybible` | `uk` | 66 книг | **MT** | Біблія в перекладі П. Куліша та І. Левицького (Відень 1903). |
 | **`fil`** | `FIL.bbl.mybible` | `uk` | 66 книг | **LXX** | Біблія в перекладі Патріарха Філарета (2004). |
 | **`gyz`** | `GYZ.bbl.mybible` | `uk` | 66 книг | **LXX** | Біблія, Новітній переклад Олександра Гижі (2006). |
+| **`ukder`** | `UKDER.bbl.mybible` | `uk` | 30 книг | **MT** | Велике Відкриття. Переклад Діани Деркач (1992). |
 | **`nup`** | `NUP.bbl.mybible` | `uk` | **27 книг (НЗ)** | **MT** | Новий Завіт у перекладі Юрія Попченка (2021). Висока точність до Textus Receptus. |
 | **`lcvu`** | `LCVU.bbl.mybible` | `uk` | 66 книг | **LXX** | Дослівно-Смисловий Переклад Біблії під ред. В. Журомського зі Стронгом. |
 | **`igrb`** | `IGRB.bbl.mybible` | `grc/uk` | 66 книг | **LXX** | Підрядкова грецько-українська Біблія з Дослівно-Смисловим Перекладом В. Журомського. |
@@ -170,6 +171,9 @@ mybible serve --port 3333 --host 127.0.0.1
 | **`nrt`** | `NRT.bbl.mybible` | `ru` | 66 книг | **LXX** | Новый Русский Перевод (НРП / NRT, Biblica). |
 | **`ibs`** | `IBS.bbl.mybible` | `ru` | 66 книг | **MT** | Слово Жизни (IBS / Biblica). |
 | **`rbo`** | `RBO.bbl.mybible` | `ru` | 66 книг | **MT** | Библия в современном русском переводе (РБО 2011/2015). |
+| **`jnt`** | `JNT.bbl.mybible` | `ru` | **27 книг (НЗ)** | **MT** | Еврейский Новый Завет в переводе и комментариях Давида Стерна. |
+| **`desn`** | `DESN.bbl.mybible` | `ru` | 15 книг | **MT** | Библейские переводы Андрея Десницкого. |
+| **`tnhr`** | `TNHR.bbl.mybible` | `ru` | **39 книг (СЗ)** | **MT** | ТаНаХ на русском языке в переводе Давида Йосифона (1975). |
 | **`kassian`** | `KASSIAN.bbl.mybible` | `ru` | **27 книг (НЗ)** | **MT** | Новый Завет в переводе еп. Кассиана (Безобразова). |
 | **`ucs`** | `UCS.bbl.mybible` | `cu` | 66 книг | **MT** | Библия Церковнославянская (Елизаветинская). |
 | **`kjv`** | `KJV.bbl.mybible` | `en` | 66 книг | **MT** | King James Version (1611). Класичний англійський переклад. |
@@ -177,8 +181,16 @@ mybible serve --port 3333 --host 127.0.0.1
 | **`esv`** | `ESV.bbl.mybible` | `en` | 66 книг | **MT** | English Standard Version (2001/2016). Стандарт сучасної євангельської науки. |
 | **`nasb`** | `NASB.bbl.mybible` | `en` | 66 книг | **MT** | New American Standard Bible. Буквальний академічний переклад. |
 | **`niv`** | `NIV.bbl.mybible` | `en` | 66 книг | **MT** | New International Version. Найпопулярніший англійський динамічний переклад. |
+| **`lsb`**, **`net`**, **`csb17`** (`csb`), **`nlt`**, **`bsb`**, **`amp`**, **`ylt`**, **`gnv`**, **`rsv`**, **`asv`**, **`web`**, **`msg`**, **`ceb`**, **`isv`**, **`mev`**, **`cjb`**, **`tlv`**, **`ts2009`**, **`drb`**, **`nrsvce`**, **`njb1985`**, **`lbp`**, **`lsv`**, **`rsv2ce`**, **`nabre`**, **`cevd`**, **`gntd`**, **`erv`**, **`gnt`**, **`nlv`** | `*.bbl.mybible` | `en` | 66 книг | **MT** | Додаткові англійські переклади з `bolls.life` (Legacy Standard, NET, CSB 2017, NLT, Berean, Amplified, Young's Literal, Geneva 1599, RSV, ASV із Стронгом, WEB, The Message, CEB, ISV, MEV, Complete Jewish Bible, TLV, Douay-Rheims та ін.). |
+| **`lxxe`** | `LXXE.bbl.mybible` | `en` | **39 книг (СЗ)** | **LXX** | Brenton's English Septuagint (1851). |
+| **`spe`** | `SPE.bbl.mybible` | `en` | **5 книг (Тора)** | **MT** | Samaritan Pentateuch in English (2013). |
+| **`auv`**, **`wpnt`** | `AUV.bbl.mybible`, `WPNT.bbl.mybible` | `en` | **27 книг (НЗ)** | **MT** | An Understandable Version (1995) та Wilbur Pickering's New Testament. |
 | **`lxx`** | `LXX.bbl.mybible` | `el` | 66 книг | **MT** | Greek Bible (Septuagint LXX грецький Старий Завіт + Novum Testamentum Graece). |
+| **`na28`**, **`sblgnt`**, **`tr`**, **`tisch`**, **`ntgt`** | `*.bbl.mybible` | `el` | **27 книг (НЗ)** | **MT** | Грецький Новий Завіт: Nestle-Aland 28th Ed. (`na28`), SBLGNT (`sblgnt`), Textus Receptus 1624 (`tr`), Tischendorf 8th Ed. зі Стронгом (`tisch`) та без (`ntgt`). |
 | **`wlc`** | `WLC.bbl.mybible` | `he` | 66 книг | **MT** | Westminster Leningrad Codex (Давньоєврейський Танах + Єврейський НЗ). |
+| **`wlca`**, **`wlcc`**, **`hac`** | `WLCA.bbl.mybible`, `WLCC.bbl.mybible`, `HAC.bbl.mybible` | `he` | **39 книг (СЗ)** | **MT** | Давньоєврейський Танах: WLC з оголосовками, акцентами та Стронгом (`wlca`), консонантний WLC (`wlcc`), Алеппський кодекс (`hac`). |
+| **`dhnt`** | `DHNT.bbl.mybible` | `he` | **27 книг (НЗ)** | **MT** | Єврейський Новий Завіт Франца Деліча (1877/1998). |
+| **`vulg`** | `VULG.bbl.mybible` | `la` | 66 книг | **LXX** | Biblia Sacra juxta Vulgatam Clementinam (Латинська Вульгата). |
 
 ### 3.2. Коментарі (`.cmt.mybible` — 14 модулів)
 
