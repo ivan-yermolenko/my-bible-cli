@@ -15,6 +15,7 @@ export type RemoteModuleSourceType =
   | 'sqlite'
   | 'beblia-xml'
   | 'ebible-vpl-zip'
+  | 'bolls-json'
   | 'builtin-sample'
   | 'biblequote-zip'
   | 'biblequote-dict'
@@ -308,6 +309,30 @@ export const REMOTE_MODULES_CATALOG: RemoteModuleCatalogItem[] = [
     url: 'http://mb.igr.bible/.mb_private_repo/m/IGRBu+.zip',
     defaultPreset: false,
     tradition: 'MT',
+  },
+  {
+    id: 'cuv',
+    aliases: ['cuv23', 'sup'],
+    fileName: 'CUV.bbl.mybible',
+    name: "БІБЛІЯ. Сучасний переклад УБТ (CUV'23)",
+    language: 'uk',
+    type: 'bible',
+    sourceType: 'bolls-json',
+    url: 'https://bolls.life/static/translations/CUV23.json',
+    defaultPreset: true,
+    tradition: 'MT',
+  },
+  {
+    id: 'bti',
+    aliases: ['kulakov'],
+    fileName: 'BTI.bbl.mybible',
+    name: 'Библия в современном русском переводе под ред. М. П. и М. М. Кулаковых (BTI 2015)',
+    language: 'ru',
+    type: 'bible',
+    sourceType: 'bolls-json',
+    url: 'https://bolls.life/static/translations/BTI.json',
+    defaultPreset: true,
+    tradition: 'LXX',
   },
   {
     id: 'ibs',
@@ -1149,6 +1174,122 @@ export function compileEbibleVplZipToSqlite(
         insertVerse.run(bookInfo.bookNumber, chapterNum, verseNum, verseText);
         versesInserted++;
       }
+    }
+
+    db.exec('CREATE INDEX idx_verses_lookup ON verses (book_number, chapter, verse);');
+    db.exec('COMMIT');
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // ignore
+    }
+    throw err;
+  } finally {
+    db.close();
+  }
+
+  return { booksInserted, versesInserted };
+}
+
+/**
+ * Compiles a Bolls.life static translation JSON dump (e.g. `CUV23.json`, `BTI.json`)
+ * into a MyBible `.bbl.mybible` SQLite3 database.
+ */
+export function compileBollsJsonToSqlite(
+  jsonText: string,
+  targetFilePath: string,
+  catalogItem: RemoteModuleCatalogItem,
+): { booksInserted: number; versesInserted: number } {
+  const entries = JSON.parse(jsonText) as Array<{
+    book: number;
+    chapter: number;
+    verse: number;
+    text: string;
+  }>;
+
+  if (!Array.isArray(entries)) {
+    throw new Error('Invalid Bolls.life translation JSON: expected an array of verse objects.');
+  }
+
+  const dir = path.dirname(targetFilePath);
+  fs.mkdirSync(dir, { recursive: true });
+  if (fs.existsSync(targetFilePath)) {
+    fs.unlinkSync(targetFilePath);
+  }
+
+  const db = new DatabaseSync(targetFilePath);
+  let booksInserted = 0;
+  let versesInserted = 0;
+
+  try {
+    db.exec(`
+      CREATE TABLE info (name TEXT, value TEXT);
+      CREATE TABLE books (book_number NUMERIC, short_name TEXT, long_name TEXT, book_color TEXT);
+      CREATE TABLE verses (book_number NUMERIC, chapter NUMERIC, verse NUMERIC, text TEXT);
+    `);
+
+    const insertInfo = db.prepare('INSERT INTO info (name, value) VALUES (?, ?)');
+    const insertBook = db.prepare(
+      'INSERT INTO books (book_number, short_name, long_name, book_color) VALUES (?, ?, ?, ?)',
+    );
+    const insertVerse = db.prepare(
+      'INSERT INTO verses (book_number, chapter, verse, text) VALUES (?, ?, ?, ?)',
+    );
+
+    db.exec('BEGIN TRANSACTION');
+
+    insertInfo.run('description', catalogItem.name);
+    insertInfo.run('language', catalogItem.language);
+    insertInfo.run('version', '1.0');
+    if (catalogItem.tradition) {
+      insertInfo.run('versification', catalogItem.tradition);
+    }
+
+    const useCyrillicNames =
+      catalogItem.language === 'uk' || catalogItem.language === 'ru';
+    const seenBooks = new Set<number>();
+
+    for (const entry of entries) {
+      const bookInfo = BOOK_LIST[entry.book - 1];
+      if (!bookInfo || typeof entry.text !== 'string') {
+        continue;
+      }
+
+      // Normalize Bolls.life HTML footnotes & line breaks to MyBible tags
+      const normalizedText = entry.text
+        .replace(/<sup>([\s\S]*?)<\/sup>/gi, '<n>$1</n>')
+        .replace(/<br\s*\/?>/gi, '<br/>')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!normalizedText) {
+        continue;
+      }
+
+      if (!seenBooks.has(bookInfo.bookNumber)) {
+        seenBooks.add(bookInfo.bookNumber);
+        const shortName = useCyrillicNames
+          ? catalogItem.language === 'ru'
+            ? bookInfo.shortNameRu
+            : bookInfo.shortNameUa
+          : bookInfo.shortNameEn;
+        const longName = useCyrillicNames
+          ? catalogItem.language === 'ru'
+            ? bookInfo.longNameRu
+            : bookInfo.longNameUa
+          : bookInfo.longNameEn;
+        insertBook.run(
+          bookInfo.bookNumber,
+          shortName,
+          longName,
+          bookInfo.bookNumber < 470 ? '#4a6da7' : '#8b4513',
+        );
+        booksInserted++;
+      }
+
+      insertVerse.run(bookInfo.bookNumber, entry.chapter, entry.verse, normalizedText);
+      versesInserted++;
     }
 
     db.exec('CREATE INDEX idx_verses_lookup ON verses (book_number, chapter, verse);');
@@ -2271,6 +2412,14 @@ export async function downloadAndInstallModule(
     const zipBuf = Buffer.from(await response.arrayBuffer());
     const tmpPath = `${filePath}.tmp`;
     const stats = compileEbibleVplZipToSqlite(zipBuf, tmpPath, item);
+    fs.renameSync(tmpPath, filePath);
+    options.onProgress?.(
+      `[OK]   Compiled ${item.id} (${stats.booksInserted} books, ${stats.versesInserted} verses) -> ${filePath}`,
+    );
+  } else if (item.sourceType === 'bolls-json') {
+    const jsonText = await response.text();
+    const tmpPath = `${filePath}.tmp`;
+    const stats = compileBollsJsonToSqlite(jsonText, tmpPath, item);
     fs.renameSync(tmpPath, filePath);
     options.onProgress?.(
       `[OK]   Compiled ${item.id} (${stats.booksInserted} books, ${stats.versesInserted} verses) -> ${filePath}`,
